@@ -58,6 +58,12 @@ chmod 644 /usr/local/nagios/var/status.dat 2>/dev/null || true
 # ---- 3. Configurar sudoers para www-data ----
 echo ">> [3/4] Configurando permisos de administración..."
 
+# Instalar sudo si no está
+if ! command -v sudo &> /dev/null; then
+    apt-get install -y -qq sudo
+fi
+mkdir -p /etc/sudoers.d
+
 cat > /etc/sudoers.d/nagios-webpanel << 'EOF'
 # Permitir que www-data recargue Nagios y valide configuración
 www-data ALL=(ALL) NOPASSWD: /usr/bin/systemctl reload nagios
