@@ -13,7 +13,7 @@ set -e
 
 CTID=${CTID:-200}                     # ID del contenedor (usa variable de entorno si existe)
 HOSTNAME="nagios"                     # Nombre del contenedor
-TEMPLATE_STORAGE="local"                 # Storage para templates (tipo 'dir')
+TEMPLATE_STORAGE=""                       # Se auto-detecta abajo
 TEMPLATE_NAME=""                          # Se auto-detecta abajo
 STORAGE="local-lvm"                   # Storage para el disco
 DISK_SIZE=8                           # Tamaño del disco en GB
@@ -47,6 +47,17 @@ fi
 
 # Buscar template Debian 12 disponible
 echo ">> Buscando template Debian 12..."
+
+# Auto-detectar storage que soporte templates
+if [ -z "$TEMPLATE_STORAGE" ]; then
+    TEMPLATE_STORAGE=$(pvesm status --content vztmpl 2>/dev/null | tail -n +2 | awk '{print $1}' | head -1)
+    if [ -z "$TEMPLATE_STORAGE" ]; then
+        echo "ERROR: No se encontró ningún storage que soporte templates."
+        echo "Verificar con: pvesm status --content vztmpl"
+        exit 1
+    fi
+    echo "   Storage para templates: $TEMPLATE_STORAGE"
+fi
 
 # Primero verificar si ya está descargado
 TEMPLATE_NAME=$(pveam list $TEMPLATE_STORAGE 2>/dev/null | grep "debian-12-standard" | awk '{print $1}' | head -1)
