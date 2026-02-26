@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  shellcheck:
+    name: Shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: './scripts'
+
+  validate-configs:
+    name: Validate Nagios Configurations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Check line endings and syntax
+        run: |
+          # Check for CRLF line endings
+          if grep -q $'\r' $(find config -name "*.cfg"); then
+            echo "Error: CRLF line endings detected in configuration files."
+            echo "Please use LF line endings for all .cfg files."
+            exit 1
+          fi

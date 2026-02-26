@@ -1,15 +1,18 @@
 #!/bin/bash
 # ============================================================
 # Script: deploy-proxmox.sh
-# Descripción: Clona el repo privado y despliega todo en un LXC
+# Descripción: Clona el repo y despliega Nagios en un LXC
 # Ejecutar en: HOST PROXMOX como root
-# Uso: bash deploy-proxmox.sh
+# Uso: bash deploy-proxmox.sh [URL_REPO]
+#
+# Si el repo es privado, usar:
+#   bash deploy-proxmox.sh https://TOKEN@github.com/usuario/Nagios.git
 # ============================================================
 
 set -e
 
 # ===================== CONFIGURACIÓN =====================
-GITHUB_REPO="https://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@github.com/soporteteispg/Nagios.git"
+GITHUB_REPO="${1:-}"
 CLONE_DIR="/root/Nagios"
 # =========================================================
 
@@ -30,7 +33,17 @@ if [ -d "$CLONE_DIR" ]; then
     cd "$CLONE_DIR"
     git pull
 else
-    echo ">> Clonando repositorio privado..."
+    if [ -z "$GITHUB_REPO" ]; then
+        echo ">> URL del repositorio no proporcionada."
+        echo ""
+        read -p "   Ingresá la URL del repositorio Git: " GITHUB_REPO
+        if [ -z "$GITHUB_REPO" ]; then
+            echo "   ERROR: URL requerida."
+            echo "   Uso: bash deploy-proxmox.sh https://github.com/usuario/Nagios.git"
+            exit 1
+        fi
+    fi
+    echo ">> Clonando repositorio..."
     git clone "$GITHUB_REPO" "$CLONE_DIR"
     cd "$CLONE_DIR"
 fi
