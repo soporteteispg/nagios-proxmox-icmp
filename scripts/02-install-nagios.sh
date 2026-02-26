@@ -118,13 +118,6 @@ echo ">> [7/8] Aplicando configuración de monitoreo..."
 # Crear directorio para hosts personalizados
 mkdir -p /usr/local/nagios/etc/objects/hosts
 
-# Agregar la línea cfg_dir para cargar configs de hosts
-if ! grep -q "cfg_dir=/usr/local/nagios/etc/objects/hosts" /usr/local/nagios/etc/nagios.cfg; then
-    echo "" >> /usr/local/nagios/etc/nagios.cfg
-    echo "# Directorio de hosts personalizados" >> /usr/local/nagios/etc/nagios.cfg
-    echo "cfg_dir=/usr/local/nagios/etc/objects/hosts" >> /usr/local/nagios/etc/nagios.cfg
-fi
-
 # Copiar archivos de configuración si existen en /root/config/
 if [ -d "/root/config" ]; then
     echo "   Copiando archivos de configuración personalizados..."
@@ -137,7 +130,7 @@ if [ -d "/root/config" ]; then
     [ -f "/root/config/contacts.cfg" ] && \
         cp /root/config/contacts.cfg /usr/local/nagios/etc/objects/contacts.cfg
 
-    # Agregar las configs personalizadas al nagios.cfg
+    # Agregar configs al nagios.cfg (ORDEN IMPORTANTE: templates ANTES que hosts)
     for cfg in templates_custom.cfg commands_custom.cfg; do
         cfg_path="/usr/local/nagios/etc/objects/$cfg"
         if [ -f "$cfg_path" ] && ! grep -q "$cfg_path" /usr/local/nagios/etc/nagios.cfg; then
@@ -148,6 +141,11 @@ if [ -d "/root/config" ]; then
     # Copiar hosts
     if [ -d "/root/config/hosts" ]; then
         cp /root/config/hosts/*.cfg /usr/local/nagios/etc/objects/hosts/ 2>/dev/null || true
+    fi
+
+    # Agregar cfg_dir de hosts DESPUÉS de templates (orden importa)
+    if ! grep -q "cfg_dir=/usr/local/nagios/etc/objects/hosts" /usr/local/nagios/etc/nagios.cfg; then
+        echo "cfg_dir=/usr/local/nagios/etc/objects/hosts" >> /usr/local/nagios/etc/nagios.cfg
     fi
 
     echo "   ✅ Configuración personalizada aplicada"
