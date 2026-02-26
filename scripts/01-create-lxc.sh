@@ -21,8 +21,6 @@ RAM=1024                              # RAM en MB
 SWAP=512                              # SWAP en MB
 CORES=2                               # Núcleos CPU
 BRIDGE="vmbr0"                        # Bridge de red
-IP="192.168.1.50/24"                  # IP del contenedor (CAMBIAR)
-GATEWAY="192.168.1.1"                 # Gateway (CAMBIAR)
 DNS="8.8.8.8"                         # DNS
 PASSWORD="nagios2026"                 # Contraseña root del contenedor (CAMBIAR)
 # =========================================================
@@ -33,8 +31,7 @@ echo "============================================"
 echo ""
 echo "  CTID:     $CTID"
 echo "  Hostname: $HOSTNAME"
-echo "  IP:       $IP"
-echo "  Gateway:  $GATEWAY"
+echo "  Red:      DHCP (bridge $BRIDGE)"
 echo "  RAM:      ${RAM}MB | Disco: ${DISK_SIZE}GB"
 echo ""
 
@@ -88,7 +85,7 @@ pct create $CTID $TEMPLATE_NAME \
     --memory $RAM \
     --swap $SWAP \
     --cores $CORES \
-    --net0 name=eth0,bridge=${BRIDGE},ip=${IP},gw=${GATEWAY} \
+    --net0 name=eth0,bridge=${BRIDGE},ip=dhcp \
     --nameserver $DNS \
     --password $PASSWORD \
     --unprivileged 1 \
