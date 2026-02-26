@@ -10,7 +10,7 @@ set -e
 
 # ===================== CONFIGURACIÓN =====================
 CTID=200
-GITHUB_REPO="https://github.com/soporteteispg/Nagios.git"
+GITHUB_REPO="https://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@github.com/soporteteispg/Nagios.git"
 CLONE_DIR="/root/Nagios"
 # =========================================================
 
