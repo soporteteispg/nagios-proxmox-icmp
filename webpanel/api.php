@@ -475,28 +475,30 @@ function removeHostFromFile($file, $name)
 {
     $content = file_get_contents($file);
 
-    // Eliminar el bloque define host con este host_name
+    // Eliminar bloque define host con este host_name (con cualquier comentario previo)
+    // Busca opcionalmente líneas de comentario/vacías antes del define host
     $content = preg_replace(
-        '/# Host[^\n]*\n?define\s+host\s*\{[^}]*host_name\s+' . preg_quote($name, '/') . '\s*\n[^}]*\}\s*/s',
-        '',
+        '/(^|\n)(#[^\n]*\n)*\s*define\s+host\s*\{[^}]*host_name\s+' . preg_quote($name, '/') . '\b[^}]*\}\s*/s',
+        "\n",
         $content
     );
 
-    // Eliminar servicios asociados
+    // Eliminar servicios asociados (con cualquier comentario previo)
     $content = preg_replace(
-        '/define\s+service\s*\{[^}]*host_name\s+' . preg_quote($name, '/') . '\s*\n[^}]*\}\s*/s',
-        '',
+        '/(^|\n)(#[^\n]*\n)*\s*define\s+service\s*\{[^}]*host_name\s+' . preg_quote($name, '/') . '\b[^}]*\}\s*/s',
+        "\n",
         $content
     );
 
     $content = trim($content);
 
-    if (empty($content)) {
+    if (empty($content) || preg_match('/^\s*(#[^\n]*\s*)*$/s', $content)) {
         unlink($file);
     }
     else {
         file_put_contents($file, $content . "\n");
         chown($file, 'nagios');
-        chgrp($file, 'nagios');
+        chgrp($file, 'nagcmd');
+        chmod($file, 0664);
     }
 }
