@@ -94,7 +94,7 @@ async function loadData() {
             fetch(`${API}?action=status`).then(r => r.json())
         ]);
 
-        allHosts = hostsRes.hosts || [];
+        allHosts = (hostsRes.hosts || []).filter(h => h.host_name);
         allStatuses = statusRes.statuses || {};
 
         updateSummary(statusRes.summary || {});
@@ -427,5 +427,6 @@ function escapeHtml(str) {
 }
 
 function escapeAttr(str) {
-    return str.replace(/'/g, "\\'").replace(/"/g, '\\"');
+    if (!str) return '';
+    return String(str).replace(/'/g, "\\'").replace(/"/g, '\\"');
 }
