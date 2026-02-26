@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nagios ICMP Monitor — Panel de Control</title>
+    <meta name="description" content="Panel de monitoreo ICMP para red interna y externa">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ========== HEADER ========== -->
+<header class="header">
+    <div class="header-left">
+        <div class="logo">
+            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+                <circle cx="16" cy="16" r="14" stroke="url(#grad)" stroke-width="2.5" fill="none"/>
+                <circle cx="16" cy="16" r="5" fill="url(#grad)"/>
+                <line x1="16" y1="2" x2="16" y2="8" stroke="url(#grad)" stroke-width="2" stroke-linecap="round"/>
+                <line x1="16" y1="24" x2="16" y2="30" stroke="url(#grad)" stroke-width="2" stroke-linecap="round"/>
+                <line x1="2" y1="16" x2="8" y2="16" stroke="url(#grad)" stroke-width="2" stroke-linecap="round"/>
+                <line x1="24" y1="16" x2="30" y2="16" stroke="url(#grad)" stroke-width="2" stroke-linecap="round"/>
+                <defs>
+                    <linearGradient id="grad" x1="0" y1="0" x2="32" y2="32">
+                        <stop offset="0%" stop-color="#6366f1"/>
+                        <stop offset="100%" stop-color="#06b6d4"/>
+                    </linearGradient>
+                </defs>
+            </svg>
+        </div>
+        <div>
+            <h1>ICMP Monitor</h1>
+            <span class="header-subtitle">Monitoreo de Pérdida de Paquetes</span>
+        </div>
+    </div>
+    <div class="header-right">
+        <div class="auto-refresh">
+            <label class="toggle-label">
+                <input type="checkbox" id="autoRefresh" checked>
+                <span class="toggle-slider"></span>
+            </label>
+            <span class="toggle-text">Auto-refresh</span>
+            <select id="refreshInterval" class="select-mini">
+                <option value="10">10s</option>
+                <option value="30" selected>30s</option>
+                <option value="60">60s</option>
+            </select>
+        </div>
+        <span class="last-update" id="lastUpdate">—</span>
+        <button class="btn btn-primary" id="btnAddHost" title="Agregar Host">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="8" y1="2" x2="8" y2="14"/><line x1="2" y1="8" x2="14" y2="8"/></svg>
+            Agregar Host
+        </button>
+    </div>
+</header>
+
+<!-- ========== SUMMARY CARDS ========== -->
+<section class="summary" id="summary">
+    <div class="summary-card card-total">
+        <div class="summary-icon">📡</div>
+        <div class="summary-value" id="totalHosts">—</div>
+        <div class="summary-label">Total Hosts</div>
+    </div>
+    <div class="summary-card card-up">
+        <div class="summary-icon">✅</div>
+        <div class="summary-value" id="hostsUp">—</div>
+        <div class="summary-label">Activos (UP)</div>
+    </div>
+    <div class="summary-card card-down">
+        <div class="summary-icon">🔴</div>
+        <div class="summary-value" id="hostsDown">—</div>
+        <div class="summary-label">Caídos (DOWN)</div>
+    </div>
+    <div class="summary-card card-unreachable">
+        <div class="summary-icon">⚠️</div>
+        <div class="summary-value" id="hostsUnreachable">—</div>
+        <div class="summary-label">Inalcanzables</div>
+    </div>
+    <div class="summary-card card-pending">
+        <div class="summary-icon">⏳</div>
+        <div class="summary-value" id="hostsPending">—</div>
+        <div class="summary-label">Pendientes</div>
+    </div>
+</section>
+
+<!-- ========== TABS ========== -->
+<section class="tabs-wrapper">
+    <div class="tabs">
+        <button class="tab active" data-tab="all">Todos</button>
+        <button class="tab" data-tab="internal">🏠 Internos</button>
+        <button class="tab" data-tab="external">🌐 Externos</button>
+        <button class="tab" data-tab="down">🔴 Con Problemas</button>
+    </div>
+    <div class="search-box">
+        <svg width="16" height="16" fill="none" stroke="#888" stroke-width="2" stroke-linecap="round"><circle cx="7" cy="7" r="5"/><line x1="11" y1="11" x2="15" y2="15"/></svg>
+        <input type="text" id="searchInput" placeholder="Buscar host...">
+    </div>
+</section>
+
+<!-- ========== HOSTS TABLE ========== -->
+<section class="table-wrapper">
+    <table class="hosts-table" id="hostsTable">
+        <thead>
+            <tr>
+                <th class="th-status">Estado</th>
+                <th class="th-name">Host</th>
+                <th class="th-ip">Dirección IP</th>
+                <th class="th-type">Tipo</th>
+                <th class="th-rta">Latencia (RTA)</th>
+                <th class="th-loss">Pérdida %</th>
+                <th class="th-last">Último Check</th>
+                <th class="th-actions">Acciones</th>
+            </tr>
+        </thead>
+        <tbody id="hostsBody">
+            <tr>
+                <td colspan="8" class="loading-cell">
+                    <div class="spinner"></div>
+                    Cargando hosts...
+                </td>
+            </tr>
+        </tbody>
+    </table>
+</section>
+
+<!-- ========== TOAST NOTIFICATIONS ========== -->
+<div class="toasts" id="toasts"></div>
+
+<!-- ========== MODAL: ADD/EDIT HOST ========== -->
+<div class="modal-overlay" id="modalOverlay">
+    <div class="modal">
+        <div class="modal-header">
+            <h2 id="modalTitle">Agregar Host</h2>
+            <button class="modal-close" id="modalClose">&times;</button>
+        </div>
+        <form id="hostForm">
+            <input type="hidden" id="formOriginalName">
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="formHostName">Nombre del Host *</label>
+                    <input type="text" id="formHostName" placeholder="ej: servidor-web" required 
+                           pattern="[a-zA-Z0-9_-]+" title="Solo letras, números, guiones y guiones bajos">
+                </div>
+                <div class="form-group">
+                    <label for="formAddress">Dirección IP / Dominio *</label>
+                    <input type="text" id="formAddress" placeholder="ej: 192.168.1.100" required>
+                </div>
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="formAlias">Descripción</label>
+                    <input type="text" id="formAlias" placeholder="ej: Servidor Web Principal">
+                </div>
+                <div class="form-group">
+                    <label for="formParent">Host Padre (opcional)</label>
+                    <input type="text" id="formParent" placeholder="ej: gateway">
+                </div>
+            </div>
+            
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="formType">Tipo de Host</label>
+                    <select id="formType" class="select-field">
+                        <option value="internal">🏠 Interno (red local)</option>
+                        <option value="external">🌐 Externo (internet)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="formCheckLevel">Nivel de Monitoreo</label>
+                    <select id="formCheckLevel" class="select-field">
+                        <option value="quick">⚡ Rápido — 5 paquetes</option>
+                        <option value="detailed" selected>📊 Detallado — 20 paquetes</option>
+                        <option value="strict">🔒 Estricto — umbrales bajos</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="check-levels-info">
+                <div class="info-card" data-level="quick">
+                    <strong>⚡ Rápido</strong>
+                    <span>5 paquetes · Warning: 100ms/20% · Critical: 500ms/60%</span>
+                </div>
+                <div class="info-card active" data-level="detailed">
+                    <strong>📊 Detallado</strong>
+                    <span>20 paquetes · Warning: 80ms/10% · Critical: 300ms/40%</span>
+                </div>
+                <div class="info-card" data-level="strict">
+                    <strong>🔒 Estricto</strong>
+                    <span>10 paquetes · Warning: 50ms/5% · Critical: 200ms/20%</span>
+                </div>
+            </div>
+            
+            <div class="modal-actions">
+                <button type="button" class="btn btn-ghost" id="btnCancel">Cancelar</button>
+                <button type="submit" class="btn btn-primary" id="btnSubmit">Agregar Host</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ========== MODAL: DELETE CONFIRMATION ========== -->
+<div class="modal-overlay" id="deleteOverlay">
+    <div class="modal modal-sm">
+        <div class="modal-header">
+            <h2>Confirmar Eliminación</h2>
+            <button class="modal-close" id="deleteClose">&times;</button>
+        </div>
+        <p class="delete-msg">¿Eliminar el host <strong id="deleteHostName"></strong>?</p>
+        <p class="delete-sub">Esta acción no se puede deshacer. Se eliminará el host y sus servicios asociados.</p>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" id="deleteCancelBtn">Cancelar</button>
+            <button class="btn btn-danger" id="deleteConfirmBtn">Eliminar</button>
+        </div>
+    </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

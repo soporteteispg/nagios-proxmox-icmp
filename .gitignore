@@ -1,0 +1,23 @@
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Gemini/Agent files
+.gemini/
+.agents/
+
+# Temporary files
+*.tmp
+*.bak
+*.log
+
+# Don't commit sensitive passwords
+# (los scripts tienen valores por defecto que se deben cambiar)

@@ -1,0 +1,12 @@
+# Shell scripts must use LF line endings (for Linux execution)
+*.sh text eol=lf
+
+# Config files also LF
+*.cfg text eol=lf
+
+# Web files can use auto
+*.html text
+*.css text
+*.js text
+*.php text
+*.md text
