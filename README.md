@@ -23,13 +23,13 @@ Este script se encargará de crear el contenedor (por defecto CTID: `201`), inst
 2. Lanzá la creación del deployment:
 
 ```bash
-wget https://raw.githubusercontent.com/soporteteispg/Nagios/main/scripts/deploy-proxmox.sh
-bash deploy-proxmox.sh https://github.com/soporteteispg/Nagios.git
+wget https://raw.githubusercontent.com/soporteteispg/nagios-proxmox-icmp/main/scripts/deploy-proxmox.sh
+bash deploy-proxmox.sh https://github.com/soporteteispg/nagios-proxmox-icmp.git
 ```
 
 Si el repositorio es privado (requiere autenticación), podés enviar el token de acceso personal (PAT) directamente de esta forma:
 ```bash
-bash deploy-proxmox.sh https://TOKEN@github.com/soporteteispg/Nagios.git
+bash deploy-proxmox.sh https://TOKEN@github.com/soporteteispg/nagios-proxmox-icmp.git
 ```
 *(Si no pasás el parámetro, el script te va a pedir la URL de forma interactiva).*
 

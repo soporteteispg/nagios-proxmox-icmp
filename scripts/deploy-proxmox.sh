@@ -6,7 +6,7 @@
 # Uso: bash deploy-proxmox.sh [URL_REPO]
 #
 # Si el repo es privado, usar:
-#   bash deploy-proxmox.sh https://TOKEN@github.com/usuario/Nagios.git
+#   bash deploy-proxmox.sh https://TOKEN@github.com/usuario/nagios-proxmox-icmp.git
 # ============================================================
 
 set -e
