@@ -13,7 +13,8 @@ set -e
 
 CTID=${CTID:-200}                     # ID del contenedor (usa variable de entorno si existe)
 HOSTNAME="nagios"                     # Nombre del contenedor
-TEMPLATE="local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst"  # Template Debian 12
+TEMPLATE_STORAGE="local"                 # Storage para templates (tipo 'dir')
+TEMPLATE_NAME=""                          # Se auto-detecta abajo
 STORAGE="local-lvm"                   # Storage para el disco
 DISK_SIZE=8                           # Tamaño del disco en GB
 RAM=1024                              # RAM en MB
@@ -44,15 +45,32 @@ if pct status $CTID &>/dev/null; then
     exit 1
 fi
 
-# Verificar que el template existe
-if ! pveam list local | grep -q "debian-12"; then
-    echo "Template Debian 12 no encontrado. Descargando..."
-    pveam download local debian-12-standard_12.7-1_amd64.tar.zst
+# Buscar template Debian 12 disponible
+echo ">> Buscando template Debian 12..."
+
+# Primero verificar si ya está descargado
+TEMPLATE_NAME=$(pveam list $TEMPLATE_STORAGE 2>/dev/null | grep "debian-12-standard" | awk '{print $1}' | head -1)
+
+if [ -z "$TEMPLATE_NAME" ]; then
+    echo "   Template no descargado. Buscando en repositorios..."
+    AVAILABLE_TEMPLATE=$(pveam available | grep "debian-12-standard" | awk '{print $2}' | head -1)
+    
+    if [ -z "$AVAILABLE_TEMPLATE" ]; then
+        echo "ERROR: No se encontró template Debian 12 disponible."
+        echo "Verificar con: pveam available | grep debian-12"
+        exit 1
+    fi
+    
+    echo "   Descargando $AVAILABLE_TEMPLATE..."
+    pveam download $TEMPLATE_STORAGE $AVAILABLE_TEMPLATE
+    TEMPLATE_NAME="${TEMPLATE_STORAGE}:vztmpl/${AVAILABLE_TEMPLATE}"
 fi
+
+echo "   ✅ Template: $TEMPLATE_NAME"
 
 # Crear el contenedor
 echo ">> Creando contenedor..."
-pct create $CTID $TEMPLATE \
+pct create $CTID $TEMPLATE_NAME \
     --hostname $HOSTNAME \
     --storage $STORAGE \
     --rootfs ${STORAGE}:${DISK_SIZE} \
