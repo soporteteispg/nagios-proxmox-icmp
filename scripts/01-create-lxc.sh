@@ -11,7 +11,7 @@ set -e
 # ===================== CONFIGURACIÓN =====================
 # Modificar estos valores según tu entorno
 
-CTID=200                              # ID del contenedor
+CTID=${CTID:-200}                     # ID del contenedor (usa variable de entorno si existe)
 HOSTNAME="nagios"                     # Nombre del contenedor
 TEMPLATE="local:vztmpl/debian-12-standard_12.7-1_amd64.tar.zst"  # Template Debian 12
 STORAGE="local-lvm"                   # Storage para el disco

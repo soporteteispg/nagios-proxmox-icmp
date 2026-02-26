@@ -9,7 +9,6 @@
 set -e
 
 # ===================== CONFIGURACIÓN =====================
-CTID=200
 GITHUB_REPO="https://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@github.com/soporteteispg/Nagios.git"
 CLONE_DIR="/root/Nagios"
 # =========================================================
@@ -32,28 +31,56 @@ if [ -d "$CLONE_DIR" ]; then
     git pull
 else
     echo ">> Clonando repositorio privado..."
-    echo "   Ingresá tu Personal Access Token (PAT) de GitHub cuando pida la contraseña."
-    echo ""
     git clone "$GITHUB_REPO" "$CLONE_DIR"
     cd "$CLONE_DIR"
 fi
 
 echo "   ✅ Repositorio listo"
 
-# ---- 3. Crear contenedor LXC si no existe ----
+# ---- 3. Detectar contenedores existentes y elegir CTID ----
+echo ""
+echo ">> Contenedores existentes en este nodo:"
+echo "   ─────────────────────────────────────"
+EXISTING=$(pct list 2>/dev/null | tail -n +2)
+if [ -z "$EXISTING" ]; then
+    echo "   (ninguno)"
+else
+    echo "$EXISTING" | while read line; do
+        echo "   $line"
+    done
+fi
+echo "   ─────────────────────────────────────"
+echo ""
+
+# Encontrar el próximo CTID disponible (empezando desde 200)
+CTID=200
+while pct status $CTID &>/dev/null; do
+    CTID=$((CTID + 1))
+done
+
+read -p ">> CTID sugerido: $CTID — ¿Usar este? (s/n o ingresá otro número): " CTID_INPUT
+if [[ "$CTID_INPUT" =~ ^[0-9]+$ ]]; then
+    CTID=$CTID_INPUT
+elif [[ "$CTID_INPUT" != "s" && "$CTID_INPUT" != "S" && "$CTID_INPUT" != "" ]]; then
+    echo "   Cancelado."
+    exit 0
+fi
+
+# Verificar que el CTID elegido no esté en uso
 if pct status $CTID &>/dev/null; then
     echo ""
     echo ">> El contenedor $CTID ya existe."
     pct status $CTID
     echo ""
-    read -p "   ¿Continuar con el despliegue de archivos? (s/n): " CONTINUAR
+    read -p "   ¿Continuar con el despliegue de archivos al contenedor existente? (s/n): " CONTINUAR
     if [[ "$CONTINUAR" != "s" && "$CONTINUAR" != "S" ]]; then
         echo "   Cancelado."
         exit 0
     fi
 else
     echo ""
-    echo ">> Creando contenedor LXC..."
+    echo ">> Creando contenedor LXC con CTID=$CTID..."
+    export CTID
     bash "$CLONE_DIR/scripts/01-create-lxc.sh"
 fi
 
