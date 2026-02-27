@@ -92,8 +92,36 @@ if pct status $CTID &>/dev/null; then
     fi
 else
     echo ""
-    echo ">> Creando contenedor LXC con CTID=$CTID..."
+    echo ">> Storages disponibles en este nodo para contenedores:"
+    echo "   ─────────────────────────────────────"
+    STORAGES=$(pvesm status -content rootdir 2>/dev/null | tail -n +2 | awk '{print $1}')
+    if [ -z "$STORAGES" ]; then
+        echo "   (no se detectaron storages, se usará 'local-lvm' como fallback)"
+        DEFAULT_STORAGE="local-lvm"
+    else
+        echo "$STORAGES" | while read s; do echo "   - $s"; done
+        if echo "$STORAGES" | grep -q "^local-lvm$"; then
+            DEFAULT_STORAGE="local-lvm"
+        elif echo "$STORAGES" | grep -q "^local-zfs$"; then
+            DEFAULT_STORAGE="local-zfs"
+        else
+            DEFAULT_STORAGE=$(echo "$STORAGES" | head -n 1)
+        fi
+    fi
+    echo "   ─────────────────────────────────────"
+    echo ""
+
+    read -p ">> Storage sugerido: $DEFAULT_STORAGE — ¿Usar este? (s/n o ingresá el nombre de otro storage): " STORAGE_INPUT
+    if [[ "$STORAGE_INPUT" == "s" || "$STORAGE_INPUT" == "S" || "$STORAGE_INPUT" == "" ]]; then
+        STORAGE=$DEFAULT_STORAGE
+    else
+        STORAGE=$STORAGE_INPUT
+    fi
+
+    echo ""
+    echo ">> Creando contenedor LXC con CTID=$CTID en storage '$STORAGE'..."
     export CTID
+    export STORAGE
     bash "$CLONE_DIR/scripts/01-create-lxc.sh"
 fi
 
