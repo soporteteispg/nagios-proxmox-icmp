@@ -122,7 +122,7 @@ else
     echo ">> Creando contenedor LXC con CTID=$CTID en storage '$STORAGE'..."
     export CTID
     export STORAGE
-    bash "$CLONE_DIR/scripts/01-create-lxc.sh"
+    CTID=$CTID STORAGE=$STORAGE bash "$CLONE_DIR/scripts/01-create-lxc.sh"
 fi
 
 # Verificar que el contenedor está corriendo
