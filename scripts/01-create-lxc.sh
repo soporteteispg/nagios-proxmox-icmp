@@ -36,7 +36,7 @@ echo "  RAM:      ${RAM}MB | Disco: ${DISK_SIZE}GB"
 echo ""
 
 # Verificar que el CTID no esté en uso
-if pct status $CTID &>/dev/null; then
+if pct status "$CTID" &>/dev/null; then
     echo "ERROR: El contenedor $CTID ya existe."
     echo "Usa otro CTID o elimina el existente con: pct destroy $CTID"
     exit 1
@@ -57,7 +57,7 @@ if [ -z "$TEMPLATE_STORAGE" ]; then
 fi
 
 # Primero verificar si ya está descargado
-TEMPLATE_NAME=$(pveam list $TEMPLATE_STORAGE 2>/dev/null | grep "debian-12-standard" | awk '{print $1}' | head -1)
+TEMPLATE_NAME=$(pveam list "$TEMPLATE_STORAGE" 2>/dev/null | grep "debian-12-standard" | awk '{print $1}' | head -1)
 
 if [ -z "$TEMPLATE_NAME" ]; then
     echo "   Template no descargado. Buscando en repositorios..."
@@ -70,7 +70,7 @@ if [ -z "$TEMPLATE_NAME" ]; then
     fi
     
     echo "   Descargando $AVAILABLE_TEMPLATE..."
-    pveam download $TEMPLATE_STORAGE $AVAILABLE_TEMPLATE
+    pveam download "$TEMPLATE_STORAGE" "$AVAILABLE_TEMPLATE"
     TEMPLATE_NAME="${TEMPLATE_STORAGE}:vztmpl/${AVAILABLE_TEMPLATE}"
 fi
 
@@ -78,16 +78,16 @@ echo "   ✅ Template: $TEMPLATE_NAME"
 
 # Crear el contenedor
 echo ">> Creando contenedor..."
-pct create $CTID $TEMPLATE_NAME \
+pct create "$CTID" "$TEMPLATE_NAME" \
     --hostname $HOSTNAME \
-    --storage $STORAGE \
-    --rootfs ${STORAGE}:${DISK_SIZE} \
-    --memory $RAM \
-    --swap $SWAP \
-    --cores $CORES \
+    --storage "$STORAGE" \
+    --rootfs "${STORAGE}:${DISK_SIZE}" \
+    --memory "$RAM" \
+    --swap "$SWAP" \
+    --cores "$CORES" \
     --net0 name=eth0,bridge=${BRIDGE},ip=dhcp \
-    --nameserver $DNS \
-    --password $PASSWORD \
+    --nameserver "$DNS" \
+    --password "$PASSWORD" \
     --unprivileged 1 \
     --features nesting=1 \
     --onboot 1 \
@@ -97,14 +97,14 @@ echo ">> Contenedor creado exitosamente."
 
 # Iniciar el contenedor
 echo ">> Iniciando contenedor..."
-pct start $CTID
+pct start "$CTID"
 
 # Esperar a que arranque
 echo ">> Esperando que el contenedor inicie..."
 sleep 5
 
 # Verificar que está corriendo
-if pct status $CTID | grep -q "running"; then
+if pct status "$CTID" | grep -q "running"; then
     echo ""
     echo "============================================"
     echo "  ✅ Contenedor $CTID creado y corriendo"

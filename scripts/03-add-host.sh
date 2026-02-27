@@ -16,22 +16,22 @@ echo "============================================"
 echo ""
 
 # Solicitar datos
-read -p "Nombre del host (sin espacios, ej: servidor-web): " HOST_NAME
-read -p "Descripción (alias, ej: Servidor Web Principal): " HOST_ALIAS
-read -p "Dirección IP o dominio: " HOST_ADDRESS
+read -r -p "Nombre del host (sin espacios, ej: servidor-web): " HOST_NAME
+read -r -p "Descripción (alias, ej: Servidor Web Principal): " HOST_ALIAS
+read -r -p "Dirección IP o dominio: " HOST_ADDRESS
 
 echo ""
 echo "Tipo de host:"
 echo "  1) Interno (red local)"
 echo "  2) Externo (internet)"
-read -p "Seleccionar [1/2]: " HOST_TYPE
+read -r -p "Seleccionar [1/2]: " HOST_TYPE
 
 echo ""
 echo "Nivel de monitoreo:"
 echo "  1) Normal      - 10 paquetes, warning 100ms/20%, critical 500ms/60%"
 echo "  2) Detallado   - 20 paquetes, warning 80ms/10%, critical 300ms/40%"
 echo "  3) Estricto    - 10 paquetes, warning 50ms/5%, critical 200ms/20%"
-read -p "Seleccionar [1/2/3]: " CHECK_LEVEL
+read -r -p "Seleccionar [1/2/3]: " CHECK_LEVEL
 
 # Determinar template y comando
 if [ "$HOST_TYPE" == "1" ]; then
@@ -50,7 +50,7 @@ esac
 # Host padre (opcional, para internos)
 PARENT_LINE=""
 if [ "$HOST_TYPE" == "1" ]; then
-    read -p "Host padre (ej: gateway, o dejar vacío): " PARENT
+    read -r -p "Host padre (ej: gateway, o dejar vacío): " PARENT
     if [ -n "$PARENT" ]; then
         PARENT_LINE="    parents                 $PARENT"
     fi
@@ -93,7 +93,7 @@ echo ">> Validando configuración..."
 if $NAGIOS_BIN -v $NAGIOS_CFG 2>&1 | tail -1 | grep -q "Things look okay"; then
     echo "   ✅ Configuración válida"
     echo ""
-    read -p "¿Reiniciar Nagios ahora para aplicar cambios? [s/n]: " RESTART
+    read -r -p "¿Reiniciar Nagios ahora para aplicar cambios? [s/n]: " RESTART
     if [ "$RESTART" == "s" ] || [ "$RESTART" == "S" ]; then
         systemctl reload nagios
         echo "   ✅ Nagios reiniciado. El host aparecerá en la interfaz web."

@@ -12,7 +12,6 @@ set -e
 NAGIOS_VERSION="4.5.7"
 PLUGINS_VERSION="2.4.12"
 NAGIOS_ADMIN_PASS="admin123"          # Contraseña para la web (CAMBIAR)
-ADMIN_EMAIL="admin@tudominio.com"     # Email de notificaciones (CAMBIAR)
 # =========================================================
 
 NAGIOS_URL="https://github.com/NagiosEnterprises/nagioscore/releases/download/nagios-${NAGIOS_VERSION}/nagios-${NAGIOS_VERSION}.tar.gz"
