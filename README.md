@@ -17,7 +17,8 @@ Proyecto de monitoreo ICMP con Nagios Core y panel web personalizado. Está opti
 ## 📦 Despliegue Automatizado
 Para desplegar este proyecto en un nuevo servidor Proxmox, tenés que descargar y ejecutar el script `deploy-proxmox.sh` en la terminal del nodo host de Proxmox.
 
-Este script se encargará de crear el contenedor (por defecto CTID: `201`), instalar Nagios y el Panel Web.
+Este script se encargará de crear el contenedor (por defecto buscará usar el próximo CTID libre a partir del `200`), instalar Nagios y el Panel Web.
+Durante el proceso, el script detectará todos los storages disponibles en tu nodo y te permitirá elegir en cuál de ellos crear el contenedor de forma interactiva (usualmente sugiriendo `local-lvm` o `local-zfs`).
 
 1. Ingresá por SSH al nodo Proxmox como `root`.
 2. Lanzá la creación del deployment:
