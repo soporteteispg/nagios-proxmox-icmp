@@ -446,7 +446,7 @@ function hostExists($name)
     $files = glob(HOSTS_DIR . '/*.cfg');
     foreach ($files as $file) {
         $content = file_get_contents($file);
-        if (preg_match('/host_name\s+' . preg_quote($name, '/') . '\s*$/m', $content)) {
+        if (preg_match('/^\s*host_name\s+' . preg_quote($name, '/') . '(\s|;|$)/m', $content)) {
             return true;
         }
     }
@@ -460,11 +460,11 @@ function findHostFile($name)
     if (file_exists($dedicated))
         return $dedicated;
 
-    // Buscar en todos los archivos
+    // Buscar en todos los archivos (permite comentarios inline con ;)
     $files = glob(HOSTS_DIR . '/*.cfg');
     foreach ($files as $file) {
         $content = file_get_contents($file);
-        if (preg_match('/host_name\s+' . preg_quote($name, '/') . '\s*$/m', $content)) {
+        if (preg_match('/^\s*host_name\s+' . preg_quote($name, '/') . '(\s|;|$)/m', $content)) {
             return $file;
         }
     }
@@ -473,24 +473,79 @@ function findHostFile($name)
 
 function removeHostFromFile($file, $name)
 {
-    $content = file_get_contents($file);
+    $lines = file($file);
+    $result = [];
+    $skip = false;
+    $commentBuffer = [];
+    $braceDepth = 0;
+    $blockHasTarget = false;
 
-    // Eliminar bloque define host con este host_name (con cualquier comentario previo)
-    // Busca opcionalmente líneas de comentario/vacías antes del define host
-    $content = preg_replace(
-        '/(^|\n)(#[^\n]*\n)*\s*define\s+host\s*\{[^}]*host_name\s+' . preg_quote($name, '/') . '\b[^}]*\}\s*/s',
-        "\n",
-        $content
-    );
+    foreach ($lines as $line) {
+        $trimmed = trim($line);
 
-    // Eliminar servicios asociados (con cualquier comentario previo)
-    $content = preg_replace(
-        '/(^|\n)(#[^\n]*\n)*\s*define\s+service\s*\{[^}]*host_name\s+' . preg_quote($name, '/') . '\b[^}]*\}\s*/s',
-        "\n",
-        $content
-    );
+        // Si estamos dentro de un bloque que hay que saltar
+        if ($skip) {
+            if (strpos($trimmed, '}') !== false) {
+                $skip = false;
+                $blockHasTarget = false;
+                // También descartar comentarios buffereados antes del bloque
+                $commentBuffer = [];
+            }
+            continue;
+        }
 
-    $content = trim($content);
+        // Detectar inicio de bloque define host/service
+        if (preg_match('/^define\s+(host|service)\s*\{/', $trimmed)) {
+            // Buscar host_name en todo el bloque: leer hasta }
+            $blockLines = [$line];
+            $blockType = null;
+            $found = false;
+
+            // Recopilar las líneas del bloque
+            $tempLines = $lines;
+            $currentKey = array_search($line, $lines, true);
+            $blockContent = $line;
+
+            // Necesitamos saber si este bloque contiene el host_name buscado
+            // Para eso, parseamos desde la posición actual hasta encontrar }
+            $remaining = array_slice($lines, array_search($line, $lines, true));
+            $fullBlock = '';
+            foreach ($remaining as $bLine) {
+                $fullBlock .= $bLine;
+                if (strpos(trim($bLine), '}') !== false) {
+                    break;
+                }
+            }
+
+            // Verificar si el bloque contiene el host_name
+            if (preg_match('/^\s*host_name\s+' . preg_quote($name, '/') . '(\s|;|$)/m', $fullBlock)) {
+                $skip = true;
+                $blockHasTarget = true;
+                $commentBuffer = []; // Descartar comentarios previos al bloque
+                continue;
+            }
+        }
+
+        // Bufferear líneas de comentario y vacías (podrían pertenecer al próximo bloque)
+        if ($trimmed === '' || $trimmed[0] === '#') {
+            $commentBuffer[] = $line;
+            continue;
+        }
+
+        // Línea normal: vaciar buffer de comentarios y agregar
+        foreach ($commentBuffer as $cLine) {
+            $result[] = $cLine;
+        }
+        $commentBuffer = [];
+        $result[] = $line;
+    }
+
+    // Agregar cualquier comentario final restante (footer del archivo)
+    foreach ($commentBuffer as $cLine) {
+        $result[] = $cLine;
+    }
+
+    $content = trim(implode('', $result));
 
     if (empty($content) || preg_match('/^\s*(#[^\n]*\s*)*$/s', $content)) {
         unlink($file);
