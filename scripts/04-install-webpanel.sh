@@ -31,14 +31,16 @@ if [ -d "/root/webpanel" ]; then
     if [ ! -f "$PANEL_DIR/auth.php" ] && [ -f "/root/webpanel/auth.php" ]; then
         cp /root/webpanel/auth.php "$PANEL_DIR/"
     elif [ ! -f "$PANEL_DIR/auth.php" ]; then
-        cat << 'EOF' > "$PANEL_DIR/auth.php"
+        # Generar hash real en el servidor usando PHP CLI
+        DEFAULT_HASH=$(php -r "echo password_hash('nagios2024', PASSWORD_DEFAULT);")
+        cat << EOF > "$PANEL_DIR/auth.php"
 <?php
 // Archivo de credenciales de Nagios Web Panel
 // Este archivo NO debe ser accesible públicamente.
 // La contraseña predeterminada es: nagios2024
 return [
     'users' => [
-        'admin' => '$2y$10$U.lU0aOXXC1B/D/lQ9tFae.r6yCByI2c6V/o4Q/q612hBw/lR1LWe'
+        'admin' => '$DEFAULT_HASH'
     ]
 ];
 EOF
