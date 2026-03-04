@@ -474,61 +474,57 @@ function findHostFile($name)
 function removeHostFromFile($file, $name)
 {
     $lines = file($file);
+    $total = count($lines);
     $result = [];
-    $skip = false;
     $commentBuffer = [];
-    $braceDepth = 0;
-    $blockHasTarget = false;
+    $i = 0;
 
-    foreach ($lines as $line) {
-        $trimmed = trim($line);
-
-        // Si estamos dentro de un bloque que hay que saltar
-        if ($skip) {
-            if (strpos($trimmed, '}') !== false) {
-                $skip = false;
-                $blockHasTarget = false;
-                // También descartar comentarios buffereados antes del bloque
-                $commentBuffer = [];
-            }
-            continue;
-        }
+    while ($i < $total) {
+        $trimmed = trim($lines[$i]);
 
         // Detectar inicio de bloque define host/service
         if (preg_match('/^define\s+(host|service)\s*\{/', $trimmed)) {
-            // Buscar host_name en todo el bloque: leer hasta }
-            $blockLines = [$line];
-            $blockType = null;
-            $found = false;
-
-            // Recopilar las líneas del bloque
-            $tempLines = $lines;
-            $currentKey = array_search($line, $lines, true);
-            $blockContent = $line;
-
-            // Necesitamos saber si este bloque contiene el host_name buscado
-            // Para eso, parseamos desde la posición actual hasta encontrar }
-            $remaining = array_slice($lines, array_search($line, $lines, true));
+            // Recopilar todo el bloque desde aquí hasta }
+            $blockStart = $i;
             $fullBlock = '';
-            foreach ($remaining as $bLine) {
-                $fullBlock .= $bLine;
-                if (strpos(trim($bLine), '}') !== false) {
+            $blockEnd = $i;
+            for ($j = $i; $j < $total; $j++) {
+                $fullBlock .= $lines[$j];
+                if (strpos(trim($lines[$j]), '}') !== false && $j > $i) {
+                    $blockEnd = $j;
+                    break;
+                }
+                // Manejar caso donde { y } están en la misma línea
+                if ($j === $i && strpos($trimmed, '}') !== false) {
+                    $blockEnd = $j;
                     break;
                 }
             }
 
-            // Verificar si el bloque contiene el host_name
+            // Verificar si el bloque contiene el host_name buscado
             if (preg_match('/^\s*host_name\s+' . preg_quote($name, '/') . '(\s|;|$)/m', $fullBlock)) {
-                $skip = true;
-                $blockHasTarget = true;
-                $commentBuffer = []; // Descartar comentarios previos al bloque
+                // Saltar este bloque completo Y los comentarios previos buffereados
+                $commentBuffer = [];
+                $i = $blockEnd + 1;
                 continue;
             }
+
+            // Bloque que NO se elimina: vaciar buffer de comentarios y agregar el bloque
+            foreach ($commentBuffer as $cLine) {
+                $result[] = $cLine;
+            }
+            $commentBuffer = [];
+            for ($j = $blockStart; $j <= $blockEnd; $j++) {
+                $result[] = $lines[$j];
+            }
+            $i = $blockEnd + 1;
+            continue;
         }
 
-        // Bufferear líneas de comentario y vacías (podrían pertenecer al próximo bloque)
-        if ($trimmed === '' || $trimmed[0] === '#') {
-            $commentBuffer[] = $line;
+        // Bufferear líneas de comentario y vacías (podrían pertenecer al próximo bloque a eliminar)
+        if ($trimmed === '' || (!empty($trimmed) && $trimmed[0] === '#')) {
+            $commentBuffer[] = $lines[$i];
+            $i++;
             continue;
         }
 
@@ -537,7 +533,8 @@ function removeHostFromFile($file, $name)
             $result[] = $cLine;
         }
         $commentBuffer = [];
-        $result[] = $line;
+        $result[] = $lines[$i];
+        $i++;
     }
 
     // Agregar cualquier comentario final restante (footer del archivo)
