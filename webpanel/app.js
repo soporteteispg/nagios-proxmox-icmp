@@ -27,6 +27,14 @@ const $modalTitle = document.getElementById('modalTitle');
 const $btnSubmit = document.getElementById('btnSubmit');
 const $formCheckLevel = document.getElementById('formCheckLevel');
 const $toasts = document.getElementById('toasts');
+const $historyOverlay = document.getElementById('historyOverlay');
+const $historyTitle = document.getElementById('historyTitle');
+const $historyEvents = document.getElementById('historyEvents');
+const $historyHostSummary = document.getElementById('historyHostSummary');
+
+let rtaChart = null;
+let plChart = null;
+let currentHistoryHost = '';
 
 // ---- Init ----
 document.addEventListener('DOMContentLoaded', () => {
@@ -82,7 +90,23 @@ function setupEventListeners() {
         if (e.key === 'Escape') {
             closeModal();
             closeDeleteModal();
+            closeHistoryModal();
         }
+    });
+
+    // History modal
+    document.getElementById('historyClose').addEventListener('click', closeHistoryModal);
+    $historyOverlay.addEventListener('click', e => { if (e.target === $historyOverlay) closeHistoryModal(); });
+
+    // Range pills
+    document.querySelectorAll('.range-pill').forEach(pill => {
+        pill.addEventListener('click', () => {
+            document.querySelectorAll('.range-pill').forEach(p => p.classList.remove('active'));
+            pill.classList.add('active');
+            if (currentHistoryHost) {
+                loadHistory(currentHistoryHost, pill.dataset.range);
+            }
+        });
     });
 }
 
@@ -190,7 +214,8 @@ function renderTable() {
         const lastCheck = status.last_check;
         const type = host._type || 'internal';
 
-        return `<tr>
+        return `<tr class="host-row" onclick="openHistoryModal('${escapeAttr(host.host_name)}')"
+                    title="Ver historial de ${escapeAttr(host.host_name)}">
             <td>${renderStatusBadge(state)}</td>
             <td>
                 <span class="host-name">${escapeHtml(host.host_name)}</span>
@@ -203,8 +228,8 @@ function renderTable() {
             <td><span class="time-ago">${lastCheck ? timeAgo(lastCheck) : '—'}</span></td>
             <td>
                 <div class="actions-cell">
-                    <button class="btn-icon" title="Editar" onclick="openEditModal('${escapeAttr(host.host_name)}')">✏️</button>
-                    <button class="btn-icon danger" title="Eliminar" onclick="openDeleteModal('${escapeAttr(host.host_name)}')">🗑️</button>
+                    <button class="btn-icon" title="Editar" onclick="event.stopPropagation(); openEditModal('${escapeAttr(host.host_name)}')">✏️</button>
+                    <button class="btn-icon danger" title="Eliminar" onclick="event.stopPropagation(); openDeleteModal('${escapeAttr(host.host_name)}')">🗑️</button>
                 </div>
             </td>
         </tr>`;
@@ -429,4 +454,235 @@ function escapeHtml(str) {
 function escapeAttr(str) {
     if (!str) return '';
     return String(str).replace(/'/g, "\\'").replace(/"/g, '\\"');
+}
+
+// ===================== HISTORIAL =====================
+
+function openHistoryModal(hostName) {
+    currentHistoryHost = hostName;
+    $historyTitle.textContent = `Historial — ${hostName}`;
+
+    // Show host current status summary
+    const host = allHosts.find(h => h.host_name === hostName);
+    const status = allStatuses[hostName] || {};
+    $historyHostSummary.innerHTML = renderHostSummaryCard(host, status);
+
+    // Reset range pills to 24h
+    document.querySelectorAll('.range-pill').forEach(p => {
+        p.classList.toggle('active', p.dataset.range === '24h');
+    });
+
+    // Show loading
+    $historyEvents.innerHTML = `<div class="history-loading"><div class="spinner"></div>Cargando historial...</div>`;
+
+    $historyOverlay.classList.add('active');
+    loadHistory(hostName, '24h');
+}
+
+function closeHistoryModal() {
+    $historyOverlay.classList.remove('active');
+    currentHistoryHost = '';
+    if (rtaChart) { rtaChart.destroy(); rtaChart = null; }
+    if (plChart) { plChart.destroy(); plChart = null; }
+}
+
+function renderHostSummaryCard(host, status) {
+    if (!host) return '';
+    const state = status.state || 'PENDING';
+    const rta = status.rta;
+    const loss = status.packet_loss;
+    const type = host._type || 'internal';
+
+    return `<div class="history-summary-grid">
+        <div class="history-summary-item">
+            <span class="history-summary-label">Estado</span>
+            ${renderStatusBadge(state)}
+        </div>
+        <div class="history-summary-item">
+            <span class="history-summary-label">IP</span>
+            <span class="history-summary-value" style="font-family:monospace">${escapeHtml(host.address || '—')}</span>
+        </div>
+        <div class="history-summary-item">
+            <span class="history-summary-label">Tipo</span>
+            ${renderTypeBadge(type)}
+        </div>
+        <div class="history-summary-item">
+            <span class="history-summary-label">Latencia</span>
+            <span class="history-summary-value">${rta !== null && rta !== undefined ? rta.toFixed(1) + ' ms' : '—'}</span>
+        </div>
+        <div class="history-summary-item">
+            <span class="history-summary-label">Pérdida</span>
+            <span class="history-summary-value">${loss !== null && loss !== undefined ? loss.toFixed(0) + '%' : '—'}</span>
+        </div>
+    </div>`;
+}
+
+async function loadHistory(hostName, range) {
+    try {
+        const res = await fetch(`${API}?action=history&host=${encodeURIComponent(hostName)}&range=${range}`);
+        const data = await res.json();
+
+        if (data.error) {
+            $historyEvents.innerHTML = `<div class="history-empty">⚠️ ${escapeHtml(data.error)}</div>`;
+            return;
+        }
+
+        renderCharts(data.perfdata || []);
+        renderEvents(data.events || []);
+    } catch (err) {
+        console.error('Error loading history:', err);
+        $historyEvents.innerHTML = `<div class="history-empty">⚠️ Error al cargar historial</div>`;
+    }
+}
+
+function renderCharts(perfdata) {
+    // Destroy old charts
+    if (rtaChart) { rtaChart.destroy(); rtaChart = null; }
+    if (plChart) { plChart.destroy(); plChart = null; }
+
+    if (perfdata.length === 0) {
+        document.querySelector('.history-charts').innerHTML = `
+            <div class="history-empty">📊 No hay datos de rendimiento disponibles aún.<br>
+            <small>Los datos se generan automáticamente con cada check de Nagios.</small></div>`;
+        return;
+    }
+
+    // Make sure chart containers exist
+    const chartsContainer = document.querySelector('.history-charts');
+    chartsContainer.innerHTML = `
+        <div class="chart-container">
+            <h3 class="chart-title">📈 Latencia (RTA)</h3>
+            <div class="chart-wrapper"><canvas id="chartRTA"></canvas></div>
+        </div>
+        <div class="chart-container">
+            <h3 class="chart-title">📉 Pérdida de Paquetes</h3>
+            <div class="chart-wrapper"><canvas id="chartPL"></canvas></div>
+        </div>`;
+
+    const labels = perfdata.map(d => new Date(d.timestamp * 1000));
+    const rtaData = perfdata.map(d => d.rta);
+    const plData = perfdata.map(d => d.packet_loss);
+
+    const chartDefaults = {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                backgroundColor: 'rgba(26, 32, 53, 0.95)',
+                borderColor: 'rgba(99, 102, 241, 0.3)',
+                borderWidth: 1,
+                titleColor: '#e2e8f0',
+                bodyColor: '#94a3b8',
+                padding: 12,
+                cornerRadius: 8,
+            },
+        },
+        scales: {
+            x: {
+                type: 'time',
+                time: { tooltipFormat: 'dd/MM HH:mm' },
+                grid: { color: 'rgba(42, 51, 80, 0.4)' },
+                ticks: { color: '#64748b', maxTicksLimit: 8, font: { size: 11 } },
+            },
+            y: {
+                beginAtZero: true,
+                grid: { color: 'rgba(42, 51, 80, 0.4)' },
+                ticks: { color: '#64748b', font: { size: 11 } },
+            }
+        }
+    };
+
+    // RTA Chart
+    const ctxRTA = document.getElementById('chartRTA').getContext('2d');
+    const rtaGrad = ctxRTA.createLinearGradient(0, 0, 0, 200);
+    rtaGrad.addColorStop(0, 'rgba(99, 102, 241, 0.3)');
+    rtaGrad.addColorStop(1, 'rgba(99, 102, 241, 0.02)');
+
+    rtaChart = new Chart(ctxRTA, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [{
+                label: 'RTA (ms)',
+                data: rtaData,
+                borderColor: '#6366f1',
+                backgroundColor: rtaGrad,
+                fill: true,
+                tension: 0.3,
+                pointRadius: perfdata.length > 100 ? 0 : 2,
+                pointHoverRadius: 5,
+                borderWidth: 2,
+            }]
+        },
+        options: {
+            ...chartDefaults,
+            scales: {
+                ...chartDefaults.scales,
+                y: { ...chartDefaults.scales.y, title: { display: true, text: 'ms', color: '#64748b' } }
+            }
+        }
+    });
+
+    // Packet Loss Chart
+    const ctxPL = document.getElementById('chartPL').getContext('2d');
+    const plGrad = ctxPL.createLinearGradient(0, 0, 0, 200);
+    plGrad.addColorStop(0, 'rgba(239, 68, 68, 0.3)');
+    plGrad.addColorStop(1, 'rgba(239, 68, 68, 0.02)');
+
+    plChart = new Chart(ctxPL, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [{
+                label: 'Pérdida (%)',
+                data: plData,
+                borderColor: '#ef4444',
+                backgroundColor: plGrad,
+                fill: true,
+                tension: 0.3,
+                pointRadius: perfdata.length > 100 ? 0 : 2,
+                pointHoverRadius: 5,
+                borderWidth: 2,
+            }]
+        },
+        options: {
+            ...chartDefaults,
+            scales: {
+                ...chartDefaults.scales,
+                y: { ...chartDefaults.scales.y, max: 100, title: { display: true, text: '%', color: '#64748b' } }
+            }
+        }
+    });
+}
+
+function renderEvents(events) {
+    if (events.length === 0) {
+        $historyEvents.innerHTML = `<div class="history-empty">✅ Sin eventos de cambio de estado en este período</div>`;
+        return;
+    }
+
+    $historyEvents.innerHTML = `<div class="timeline">${events.map(ev => {
+        const date = new Date(ev.timestamp * 1000);
+        const dateStr = date.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' });
+        const timeStr = date.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const stateCls = ev.state.toLowerCase();
+        const typeIcon = ev.type === 'notification' ? '🔔' : '⚡';
+        const stateTypeLabel = ev.state_type === 'HARD' ? '' : '<span class="soft-label">SOFT</span>';
+
+        return `<div class="timeline-event">
+            <div class="timeline-dot dot-${stateCls}"></div>
+            <div class="timeline-content">
+                <div class="timeline-header">
+                    <span class="timeline-time">${dateStr} ${timeStr}</span>
+                    ${stateTypeLabel}
+                </div>
+                <div class="timeline-body">
+                    ${typeIcon} <span class="status-badge status-${stateCls}"><span class="pulse"></span>${ev.state}</span>
+                    <span class="timeline-msg">${escapeHtml(ev.message)}</span>
+                </div>
+            </div>
+        </div>`;
+    }).join('')}</div>`;
 }

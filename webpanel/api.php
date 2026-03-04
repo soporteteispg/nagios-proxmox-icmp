@@ -12,6 +12,7 @@
  *   POST   /api.php?action=delete        → Eliminar un host
  *   POST   /api.php?action=reload        → Recargar configuración de Nagios
  *   GET    /api.php?action=validate      → Validar configuración
+ *   GET    /api.php?action=history&host=X&range=24h → Historial RRD de un host
  */
 
 header('Content-Type: application/json; charset=utf-8');
@@ -30,6 +31,9 @@ define('HOSTS_DIR', '/usr/local/nagios/etc/objects/hosts');
 define('STATUS_FILE', '/usr/local/nagios/var/status.dat');
 define('NAGIOS_BIN', '/usr/local/nagios/bin/nagios');
 define('NAGIOS_CMD_FILE', '/usr/local/nagios/var/rw/nagios.cmd');
+define('NAGIOS_RRD_DIR', '/usr/local/nagios/var/rrd');
+define('NAGIOS_LOG', '/usr/local/nagios/var/nagios.log');
+define('NAGIOS_ARCHIVE_DIR', '/usr/local/nagios/var/archives');
 // =========================================================
 
 $action = $_GET['action'] ?? '';
@@ -59,6 +63,11 @@ try {
             break;
         case 'validate':
             echo json_encode(validateConfig());
+            break;
+        case 'history':
+            $hostName = sanitizeName($_GET['host'] ?? '');
+            $range = $_GET['range'] ?? '24h';
+            echo json_encode(getHostHistory($hostName, $range));
             break;
         default:
             echo json_encode(['error' => 'Acción no válida']);
@@ -581,4 +590,162 @@ function removeHostFromFile($file, $name)
     }
 
     return null; // éxito
+}
+
+// ===================== HISTORIAL RRD =====================
+
+/**
+ * Obtener historial de un host: datos RRD + eventos de log
+ */
+function getHostHistory($hostName, $range)
+{
+    if (empty($hostName)) {
+        return ['error' => 'Nombre de host requerido'];
+    }
+
+    // Calcular rango de tiempo
+    $rangeMap = [
+        '1h' => 3600,
+        '6h' => 21600,
+        '24h' => 86400,
+        '7d' => 604800,
+        '30d' => 2592000,
+    ];
+    $seconds = $rangeMap[$range] ?? 86400;
+    $startTime = time() - $seconds;
+
+    return [
+        'host' => $hostName,
+        'range' => $range,
+        'perfdata' => getRrdData($hostName, $startTime),
+        'events' => getLogEvents($hostName, $startTime),
+    ];
+}
+
+/**
+ * Leer datos de performance desde archivos RRD
+ */
+function getRrdData($hostName, $startTime)
+{
+    $safeHost = preg_replace('/[^a-zA-Z0-9_-]/', '_', $hostName);
+    $rrdFile = NAGIOS_RRD_DIR . "/{$safeHost}.rrd";
+
+    if (!file_exists($rrdFile)) {
+        return [];
+    }
+
+    // Usar rrdtool fetch para obtener datos
+    $cmd = sprintf(
+        'rrdtool fetch %s AVERAGE --start %d --end %d 2>&1',
+        escapeshellarg($rrdFile),
+        $startTime,
+        time()
+    );
+    exec($cmd, $output, $exitCode);
+
+    if ($exitCode !== 0) {
+        return [];
+    }
+
+    $data = [];
+    foreach ($output as $line) {
+        $line = trim($line);
+        // Saltar headers y líneas vacías
+        if (empty($line) || strpos($line, 'rta') !== false || strpos($line, 'DS') !== false) {
+            continue;
+        }
+
+        // Formato: timestamp: valor1 valor2
+        if (preg_match('/^(\d+):\s+([\d.e+-]+|nan)\s+([\d.e+-]+|nan)/', $line, $m)) {
+            $ts = intval($m[1]);
+            $rta = strtolower($m[2]) === 'nan' ? null : floatval($m[2]);
+            $pl = strtolower($m[3]) === 'nan' ? null : floatval($m[3]);
+
+            // Saltar entradas sin datos
+            if ($rta === null && $pl === null)
+                continue;
+
+            $data[] = [
+                'timestamp' => $ts,
+                'rta' => $rta !== null ? round($rta, 2) : null,
+                'packet_loss' => $pl !== null ? round($pl, 2) : null,
+            ];
+        }
+    }
+
+    return $data;
+}
+
+/**
+ * Leer eventos de cambio de estado desde los logs de Nagios
+ */
+function getLogEvents($hostName, $startTime)
+{
+    $events = [];
+    $logFiles = [];
+
+    // Log actual
+    if (file_exists(NAGIOS_LOG)) {
+        $logFiles[] = NAGIOS_LOG;
+    }
+
+    // Archivos archivados
+    if (is_dir(NAGIOS_ARCHIVE_DIR)) {
+        $archives = glob(NAGIOS_ARCHIVE_DIR . '/nagios-*.log');
+        if ($archives) {
+            sort($archives);
+            $logFiles = array_merge($logFiles, $archives);
+        }
+    }
+
+    $escapedName = preg_quote($hostName, '/');
+
+    foreach ($logFiles as $logFile) {
+        if (!is_readable($logFile))
+            continue;
+
+        $handle = fopen($logFile, 'r');
+        if (!$handle)
+            continue;
+
+        while (($line = fgets($handle)) !== false) {
+            // Formato: [timestamp] HOST ALERT: hostname;STATE;HARD/SOFT;attempt;message
+            if (preg_match('/^\[(\d+)\]\s+HOST ALERT:\s+' . $escapedName . ';(UP|DOWN|UNREACHABLE);(HARD|SOFT);(\d+);(.*)$/i', trim($line), $m)) {
+                $ts = intval($m[1]);
+                if ($ts < $startTime)
+                    continue;
+
+                $events[] = [
+                    'timestamp' => $ts,
+                    'type' => 'alert',
+                    'state' => $m[2],
+                    'state_type' => $m[3],
+                    'attempt' => intval($m[4]),
+                    'message' => trim($m[5]),
+                ];
+            }
+            // HOST NOTIFICATION
+            elseif (preg_match('/^\[(\d+)\]\s+HOST NOTIFICATION:\s+[^;]+;' . $escapedName . ';(UP|DOWN|UNREACHABLE);/', trim($line), $m)) {
+                $ts = intval($m[1]);
+                if ($ts < $startTime)
+                    continue;
+
+                $events[] = [
+                    'timestamp' => $ts,
+                    'type' => 'notification',
+                    'state' => $m[2],
+                    'state_type' => 'HARD',
+                    'attempt' => 0,
+                    'message' => 'Notificación enviada',
+                ];
+            }
+        }
+        fclose($handle);
+    }
+
+    // Ordenar por timestamp descendente y limitar
+    usort($events, function ($a, $b) {
+        return $b['timestamp'] - $a['timestamp'];
+    });
+    return array_slice($events, 0, 100);
 }
