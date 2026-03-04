@@ -7,6 +7,7 @@ Proyecto de monitoreo ICMP con Nagios Core y panel web personalizado. Está opti
 - Configuración separada por hosts internos y externos
 - Checkeos rápidos (cada 3-5 minutos)
 - **Panel Web Moderno** (Dashboard interactivo con modo oscuro) para agregar, borrar y visualizar el estado de los hosts
+- **Historial de Estado con RRD** — Gráficos de latencia (RTA) y pérdida de paquetes a lo largo del tiempo usando datos RRD + línea de tiempo de eventos
 - Autodespliegue en Proxmox automatizado
 
 ## 🛠️ Requisitos
@@ -39,13 +40,27 @@ bash deploy-proxmox.sh https://TOKEN@github.com/soporteteispg/nagios-proxmox-icm
 - **Script 02**: Instala las dependencias y compila Nagios 4.5.7 y los nagios-plugins.
 - **Script 03**: Utilitario interactivo para añadir hosts a la monitorización.
 - **Script 04**: Instala el Panel Web (API PHP y frontend HTML) y configura Apache2. Configura los permisos para editar los hosts desde el panel.
+- **Script 05** *(opcional)*: Instala `rrdtool` y configura Nagios para almacenar datos de rendimiento (latencia y pérdida de paquetes) en archivos RRD. Habilita los gráficos de historial en el panel web.
+
+### Habilitar historial de rendimiento (RRD)
+Si querés ver gráficos de latencia y pérdida de paquetes a lo largo del tiempo, ejecutá el script 05 dentro del contenedor:
+```bash
+pct exec <CTID> -- bash -c "bash /root/nagios-proxmox-icmp/scripts/05-install-rrd.sh"
+```
+Los datos se generan automáticamente con cada check de Nagios (~cada 5 minutos). Para ver los gráficos, hacé clic en cualquier fila de host en el panel web.
 
 > **Nota para contenedores Unprivileged (LXC)**: Es importante tener en cuenta que el contenedor LXC, por defecto, se ejecuta como unpowered container. Para que Nagios pueda ejecutar comandos ping y checkear ICMP correctamente, los scripts le asignan los permisos adecuados y configuran `net.ipv4.ping_group_range`.
 
 ## 📂 Archivos y Estructura
 - `/scripts/` — Scripts de bash automatizados y wrapper de Proxmox.
+  - `01-create-lxc.sh` — Crear contenedor LXC
+  - `02-install-nagios.sh` — Instalar Nagios Core + Plugins
+  - `03-add-host.sh` — Añadir hosts interactivamente
+  - `04-install-webpanel.sh` — Instalar panel web
+  - `05-install-rrd.sh` — Instalar rrdtool y habilitar historial RRD
+  - `deploy-proxmox.sh` — Despliegue automatizado completo
 - `/config/` — Archivos `.cfg` de Nagios base y templates.
-- `/webpanel/` — Dashboard responsivo con HTML/JS y API en PHP.
+- `/webpanel/` — Dashboard responsivo con HTML/JS, gráficos Chart.js y API en PHP.
 
 ## 🚑 Solución de Problemas (Troubleshooting)
 
@@ -67,5 +82,20 @@ chmod 664 /usr/local/nagios/etc/objects/hosts/*.cfg
 chmod 775 /usr/local/nagios/etc/objects/hosts
 ```
 
+### 3. Los gráficos de historial no muestran datos
+Si al hacer clic en un host el modal dice "No hay datos de rendimiento disponibles", verificá que el script 05 se ejecutó correctamente:
+```bash
+# Verificar que rrdtool está instalado
+rrdtool --version
+
+# Verificar que existen archivos RRD
+ls /usr/local/nagios/var/rrd/
+
+# Verificar que Nagios procesa perfdata
+grep "process_performance_data" /usr/local/nagios/etc/nagios.cfg
+```
+Los archivos `.rrd` se crean automáticamente con el primer check de cada host.
+
 ## 📝 Licencia
 Este proyecto es de código abierto y se distribuye bajo la licencia [GPLv3](./LICENSE).
+
