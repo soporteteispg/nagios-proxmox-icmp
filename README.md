@@ -47,5 +47,25 @@ bash deploy-proxmox.sh https://TOKEN@github.com/soporteteispg/nagios-proxmox-icm
 - `/config/` — Archivos `.cfg` de Nagios base y templates.
 - `/webpanel/` — Dashboard responsivo con HTML/JS y API en PHP.
 
+## 🚑 Solución de Problemas (Troubleshooting)
+
+### 1. Hosts externos aparecen como DOWN pero hay internet
+En contenedores LXC, el comando `ping` requiere permisos especiales (SUID) para que el usuario `nagios` pueda enviar paquetes ICMP. Si los hosts externos (como 8.8.8.8) figuran inactivos:
+```bash
+# Otorgar permisos SUID al binario ping
+chmod u+s /bin/ping
+systemctl restart nagios
+```
+*(Nota: El script `02-install-nagios.sh` ya aplica este fix automáticamente).*
+
+### 2. No se pueden eliminar o editar hosts desde el panel web
+Para que el panel web (Apache/PHP) pueda modificar los archivos de configuración, el usuario `www-data` debe tener permisos de escritura mediante el grupo `nagcmd`. Si el panel falla o no guarda los cambios:
+```bash
+# Arreglar permisos del directorio de hosts
+chown -R nagios:nagcmd /usr/local/nagios/etc/objects/hosts/
+chmod 664 /usr/local/nagios/etc/objects/hosts/*.cfg
+chmod 775 /usr/local/nagios/etc/objects/hosts
+```
+
 ## 📝 Licencia
 Este proyecto es de código abierto y se distribuye bajo la licencia [GPLv3](./LICENSE).
