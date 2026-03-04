@@ -318,7 +318,10 @@ function deleteHost($data)
         return ['error' => "Host '$name' no encontrado"];
     }
 
-    removeHostFromFile($file, $name);
+    $err = removeHostFromFile($file, $name);
+    if ($err) {
+        return ['error' => $err];
+    }
 
     $validation = validateConfig();
     return ['success' => true, 'message' => "Host '$name' eliminado", 'valid' => $validation['valid']];
@@ -473,11 +476,26 @@ function findHostFile($name)
 
 function removeHostFromFile($file, $name)
 {
+    // Verificar permisos antes de intentar
+    if (!is_writable($file)) {
+        // Intentar arreglar permisos
+        @chgrp($file, 'nagcmd');
+        @chmod($file, 0664);
+        if (!is_writable($file)) {
+            return "No se puede escribir en $file — permisos insuficientes";
+        }
+    }
+
     $lines = file($file);
+    if ($lines === false) {
+        return "No se pudo leer el archivo $file";
+    }
+
     $total = count($lines);
     $result = [];
     $commentBuffer = [];
     $i = 0;
+    $removed = false;
 
     while ($i < $total) {
         $trimmed = trim($lines[$i]);
@@ -494,7 +512,6 @@ function removeHostFromFile($file, $name)
                     $blockEnd = $j;
                     break;
                 }
-                // Manejar caso donde { y } están en la misma línea
                 if ($j === $i && strpos($trimmed, '}') !== false) {
                     $blockEnd = $j;
                     break;
@@ -503,13 +520,13 @@ function removeHostFromFile($file, $name)
 
             // Verificar si el bloque contiene el host_name buscado
             if (preg_match('/^\s*host_name\s+' . preg_quote($name, '/') . '(\s|;|$)/m', $fullBlock)) {
-                // Saltar este bloque completo Y los comentarios previos buffereados
                 $commentBuffer = [];
                 $i = $blockEnd + 1;
+                $removed = true;
                 continue;
             }
 
-            // Bloque que NO se elimina: vaciar buffer de comentarios y agregar el bloque
+            // Bloque que NO se elimina
             foreach ($commentBuffer as $cLine) {
                 $result[] = $cLine;
             }
@@ -521,14 +538,14 @@ function removeHostFromFile($file, $name)
             continue;
         }
 
-        // Bufferear líneas de comentario y vacías (podrían pertenecer al próximo bloque a eliminar)
+        // Bufferear líneas de comentario y vacías
         if ($trimmed === '' || (!empty($trimmed) && $trimmed[0] === '#')) {
             $commentBuffer[] = $lines[$i];
             $i++;
             continue;
         }
 
-        // Línea normal: vaciar buffer de comentarios y agregar
+        // Línea normal
         foreach ($commentBuffer as $cLine) {
             $result[] = $cLine;
         }
@@ -537,7 +554,11 @@ function removeHostFromFile($file, $name)
         $i++;
     }
 
-    // Agregar cualquier comentario final restante (footer del archivo)
+    if (!$removed) {
+        return "No se encontró el host '$name' en el archivo";
+    }
+
+    // Agregar comentarios finales
     foreach ($commentBuffer as $cLine) {
         $result[] = $cLine;
     }
@@ -545,12 +566,19 @@ function removeHostFromFile($file, $name)
     $content = trim(implode('', $result));
 
     if (empty($content) || preg_match('/^\s*(#[^\n]*\s*)*$/s', $content)) {
-        unlink($file);
+        if (!@unlink($file)) {
+            return "No se pudo eliminar el archivo $file";
+        }
     }
     else {
-        file_put_contents($file, $content . "\n");
-        chown($file, 'nagios');
-        chgrp($file, 'nagcmd');
-        chmod($file, 0664);
+        $written = @file_put_contents($file, $content . "\n");
+        if ($written === false) {
+            return "No se pudo escribir en $file";
+        }
+        @chown($file, 'nagios');
+        @chgrp($file, 'nagcmd');
+        @chmod($file, 0664);
     }
+
+    return null; // éxito
 }

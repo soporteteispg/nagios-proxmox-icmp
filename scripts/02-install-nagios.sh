@@ -154,10 +154,11 @@ else
 fi
 
 # Ajustar permisos
-chown -R nagios:nagios /usr/local/nagios/etc/
+chown -R nagios:nagcmd /usr/local/nagios/etc/
 chmod -R 664 /usr/local/nagios/etc/objects/*.cfg 2>/dev/null || true
 chmod -R 664 /usr/local/nagios/etc/objects/hosts/*.cfg 2>/dev/null || true
-chown -R nagios:nagios /usr/local/nagios/etc/objects/
+chown -R nagios:nagcmd /usr/local/nagios/etc/objects/
+chmod 775 /usr/local/nagios/etc/objects/hosts
 
 # ---- 8. Iniciar servicios ----
 echo ">> [8/8] Iniciando servicios..."
