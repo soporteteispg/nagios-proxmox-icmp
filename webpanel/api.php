@@ -18,7 +18,14 @@
 session_start();
 
 header('Content-Type: application/json; charset=utf-8');
-header('Access-Control-Allow-Origin: *');
+// Access-Control-Allow-Origin no puede ser '*' cuando se usan credenciales (cookies de sesión)
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
+if ($origin) {
+    header("Access-Control-Allow-Origin: $origin");
+}
+else {
+    header('Access-Control-Allow-Origin: *');
+}
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
 header('Access-Control-Allow-Credentials: true');
