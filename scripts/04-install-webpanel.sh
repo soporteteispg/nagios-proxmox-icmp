@@ -26,6 +26,23 @@ if [ -d "/root/webpanel" ]; then
     cp /root/webpanel/style.css  "$PANEL_DIR/"
     cp /root/webpanel/app.js     "$PANEL_DIR/"
     cp /root/webpanel/api.php    "$PANEL_DIR/"
+    
+    # Crear auth.php con credenciales por defecto si no existe
+    if [ ! -f "$PANEL_DIR/auth.php" ] && [ -f "/root/webpanel/auth.php" ]; then
+        cp /root/webpanel/auth.php "$PANEL_DIR/"
+    elif [ ! -f "$PANEL_DIR/auth.php" ]; then
+        cat << 'EOF' > "$PANEL_DIR/auth.php"
+<?php
+// Archivo de credenciales de Nagios Web Panel
+// Este archivo NO debe ser accesible públicamente.
+// La contraseña predeterminada es: nagios2024
+return [
+    'users' => [
+        'admin' => '$2y$10$U.lU0aOXXC1B/D/lQ9tFae.r6yCByI2c6V/o4Q/q612hBw/lR1LWe'
+    ]
+];
+EOF
+    fi
     echo "   ✅ Archivos del panel copiados"
 else
     echo "   ❌ No se encontró /root/webpanel/"
@@ -46,6 +63,11 @@ echo ">> [2/4] Configurando permisos..."
 
 chown -R www-data:www-data "$PANEL_DIR"
 chmod -R 755 "$PANEL_DIR"
+
+# Proteger auth.php específicamente
+if [ -f "$PANEL_DIR/auth.php" ]; then
+    chmod 640 "$PANEL_DIR/auth.php"
+fi
 
 # Asegurar que www-data pueda escribir en el directorio de hosts de Nagios
 chown nagios:nagcmd "$NAGIOS_HOSTS_DIR"

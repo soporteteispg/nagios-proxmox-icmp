@@ -31,17 +31,106 @@ const $historyOverlay = document.getElementById('historyOverlay');
 const $historyTitle = document.getElementById('historyTitle');
 const $historyEvents = document.getElementById('historyEvents');
 const $historyHostSummary = document.getElementById('historyHostSummary');
+const $loading = document.getElementById('loading'); // Added for loading indicator
 
 let rtaChart = null;
 let plChart = null;
 let currentHistoryHost = '';
 
+// ---- Auth ----
+const $loginScreen = document.getElementById('loginScreen');
+const $appContainer = document.getElementById('appContainer');
+const $loginForm = document.getElementById('loginForm');
+const $loginError = document.getElementById('loginError');
+const $loggedUsername = document.getElementById('loggedUsername');
+
 // ---- Init ----
 document.addEventListener('DOMContentLoaded', () => {
-    loadData();
     setupEventListeners();
-    setupAutoRefresh();
+    checkAuth();
 });
+
+// ===================== AUTH =====================
+
+async function checkAuth() {
+    try {
+        const res = await fetch(`${API}?action=check_auth`);
+        const data = await res.json();
+
+        if (data.success) {
+            showApp(data.username);
+        } else {
+            showLogin();
+        }
+    } catch (err) {
+        showLogin();
+    }
+}
+
+function showLogin() {
+    $appContainer.style.display = 'none';
+    $loginScreen.style.display = 'flex';
+    if (refreshTimer) clearInterval(refreshTimer);
+}
+
+function showApp(username) {
+    if (username) $loggedUsername.textContent = username;
+    $loginScreen.style.display = 'none';
+    $appContainer.style.display = 'block';
+
+    // Iniciar app
+    loadHosts();
+    if ($autoRefresh.checked) {
+        startAutoRefresh();
+    }
+}
+
+$loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    $loginError.style.display = 'none';
+
+    const username = document.getElementById('loginUser').value;
+    const password = document.getElementById('loginPass').value;
+    const btn = $loginForm.querySelector('button');
+    const originalText = btn.textContent;
+    btn.textContent = 'Iniciando...';
+    btn.disabled = true;
+
+    try {
+        const res = await fetch(`${API}?action=login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+            showApp(username);
+        } else {
+            $loginError.textContent = data.error || 'Credenciales inválidas';
+            $loginError.style.display = 'block';
+        }
+    } catch (err) {
+        $loginError.textContent = 'Error de red. Intente nuevamente.';
+        $loginError.style.display = 'block';
+    } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
+});
+
+async function logout() {
+    try {
+        await fetch(`${API}?action=logout`);
+        showLogin();
+        document.getElementById('loginPass').value = '';
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+// ===================== APP LOGIC =====================
 
 function setupEventListeners() {
     // Add host button
@@ -82,8 +171,8 @@ function setupEventListeners() {
     });
 
     // Auto-refresh toggle
-    $autoRefresh.addEventListener('change', setupAutoRefresh);
-    $refreshInterval.addEventListener('change', setupAutoRefresh);
+    $autoRefresh.addEventListener('change', startAutoRefresh);
+    $refreshInterval.addEventListener('change', startAutoRefresh);
 
     // Keyboard shortcuts
     document.addEventListener('keydown', e => {
@@ -108,20 +197,34 @@ function setupEventListeners() {
             }
         });
     });
+
+    // Logout button
+    document.getElementById('btnLogout').addEventListener('click', logout);
 }
 
 // ---- Data Loading ----
-async function loadData() {
+async function loadHosts() {
+    $loading.style.display = 'flex';
+    $hostsBody.innerHTML = ''; // Assuming $tableBody is $hostsBody
+
     try {
         const [hostsRes, statusRes] = await Promise.all([
-            fetch(`${API}?action=hosts`).then(r => r.json()),
-            fetch(`${API}?action=status`).then(r => r.json())
+            fetch(`${API}?action=hosts`),
+            fetch(`${API}?action=status`)
         ]);
 
-        allHosts = (hostsRes.hosts || []).filter(h => h.host_name);
-        allStatuses = statusRes.statuses || {};
+        if (hostsRes.status === 401 || statusRes.status === 401) {
+            showLogin();
+            return;
+        }
 
-        updateSummary(statusRes.summary || {});
+        const hostsData = await hostsRes.json();
+        const statusData = await statusRes.json();
+
+        allHosts = (hostsData.hosts || []).filter(h => h.host_name);
+        allStatuses = statusData.statuses || {};
+
+        updateSummary(statusData.summary || {});
         renderTable();
         $lastUpdate.textContent = `Actualizado: ${formatTime(new Date())}`;
     } catch (err) {
@@ -132,15 +235,17 @@ async function loadData() {
                 <div class="empty-state-icon">⚠️</div>
                 <div class="empty-state-text">No se pudo conectar con la API</div>
             </td></tr>`;
+    } finally {
+        $loading.style.display = 'none';
     }
 }
 
 // ---- Auto Refresh ----
-function setupAutoRefresh() {
+function startAutoRefresh() {
     if (refreshTimer) clearInterval(refreshTimer);
     if ($autoRefresh.checked) {
         const interval = parseInt($refreshInterval.value) * 1000;
-        refreshTimer = setInterval(loadData, interval);
+        refreshTimer = setInterval(loadHosts, interval);
     }
 }
 
@@ -346,7 +451,7 @@ document.getElementById('deleteConfirmBtn').addEventListener('click', async () =
         if (data.success) {
             showToast(`Host "${hostName}" eliminado`, 'success');
             await reloadNagios();
-            await loadData();
+            await loadHosts();
         } else {
             showToast(data.error || 'Error al eliminar', 'error');
         }
@@ -391,7 +496,7 @@ async function handleFormSubmit(e) {
             closeModal();
             showToast(data.message || `Host ${isEdit ? 'actualizado' : 'agregado'}`, 'success');
             await reloadNagios();
-            await loadData();
+            await loadHosts();
         } else {
             showToast(data.error || 'Error al guardar', 'error');
         }

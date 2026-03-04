@@ -15,6 +15,8 @@
  *   GET    /api.php?action=history&host=X&range=24h → Historial RRD de un host
  */
 
+session_start();
+
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
@@ -36,10 +38,52 @@ define('NAGIOS_LOG', '/usr/local/nagios/var/nagios.log');
 define('NAGIOS_ARCHIVE_DIR', '/usr/local/nagios/var/archives');
 // =========================================================
 
+// --- Archivo de credenciales ---
+$authFile = __DIR__ . '/auth.php';
+$credentials = file_exists($authFile) ? include($authFile) : ['users' => []];
+
 $action = $_GET['action'] ?? '';
+
+// --- Middleware de Autenticación ---
+// Rutas públicas: login
+$publicActions = ['login'];
+
+if (!in_array($action, $publicActions)) {
+    // Si no está logueado, bloqueamos la petición
+    if (!isset($_SESSION['authenticated']) || $_SESSION['authenticated'] !== true) {
+        http_response_code(401);
+        echo json_encode(['error' => 'No autorizado', 'code' => 401]);
+        exit;
+    }
+}
 
 try {
     switch ($action) {
+        case 'login':
+            $data = json_decode(file_get_contents('php://input'), true) ?: [];
+            $username = $data['username'] ?? '';
+            $password = $data['password'] ?? '';
+
+            if (isset($credentials['users'][$username]) && password_verify($password, $credentials['users'][$username])) {
+                $_SESSION['authenticated'] = true;
+                $_SESSION['username'] = $username;
+                echo json_encode(['success' => true]);
+            }
+            else {
+                http_response_code(401);
+                echo json_encode(['error' => 'Usuario o contraseña incorrectos']);
+            }
+            break;
+
+        case 'logout':
+            session_destroy();
+            echo json_encode(['success' => true]);
+            break;
+
+        case 'check_auth':
+            // Si llegó acá es porque pasó el middleware, por ende está logueado
+            echo json_encode(['success' => true, 'username' => $_SESSION['username'] ?? '']);
+            break;
         case 'hosts':
             echo json_encode(getHosts());
             break;
