@@ -45,6 +45,18 @@ return [
 ];
 EOF
     fi
+    
+    # Crear .htaccess para asegurar que el header Authorization llegue a PHP (Token Auth)
+    cat << EOF > "$PANEL_DIR/.htaccess"
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteCond %{HTTP:Authorization} ^(.*)
+RewriteRule .* - [e=HTTP_AUTHORIZATION:%1]
+</IfModule>
+SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
+CGIPassAuth On
+EOF
+
     echo "   ✅ Archivos del panel copiados"
 else
     echo "   ❌ No se encontró /root/webpanel/"
@@ -63,15 +75,16 @@ echo ">> [2/4] Configurando permisos..."
 # - Ejecutar nagios -v para validar config
 # - Recargar nagios via systemctl
 
-chown -R www-data:www-data "$PANEL_DIR"
-chmod -R 755 "$PANEL_DIR"
-
-# Proteger auth.php específicamente
+chgrp -R www-data "$PANEL_DIR"
+find "$PANEL_DIR" -type f -exec chmod 644 {} \;
+find "$PANEL_DIR" -type d -exec chmod 755 {} \;
 if [ -f "$PANEL_DIR/auth.php" ]; then
     chmod 640 "$PANEL_DIR/auth.php"
 fi
+chmod 644 "$PANEL_DIR/.htaccess"
 
-# Asegurar que www-data pueda escribir en el directorio de hosts de Nagios
+# Archivos de Nagios a los que el grupo www-data debe tener acceso
+chmod -R g+r "$NAGIOS_HOSTS_DIR"
 chown nagios:nagcmd "$NAGIOS_HOSTS_DIR"
 chmod 775 "$NAGIOS_HOSTS_DIR"
 usermod -a -G nagcmd www-data
