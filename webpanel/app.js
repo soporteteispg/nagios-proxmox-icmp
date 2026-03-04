@@ -54,7 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 async function checkAuth() {
     try {
-        const res = await fetch(`${API}?action=check_auth`);
+        const res = await fetch(`${API}?action=check_auth`, { credentials: 'include' });
         const data = await res.json();
 
         if (data.success) {
@@ -100,6 +100,7 @@ $loginForm.addEventListener('submit', async (e) => {
         const res = await fetch(`${API}?action=login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify({ username, password })
         });
 
@@ -122,7 +123,7 @@ $loginForm.addEventListener('submit', async (e) => {
 
 async function logout() {
     try {
-        await fetch(`${API}?action=logout`);
+        await fetch(`${API}?action=logout`, { credentials: 'include' });
         showLogin();
         document.getElementById('loginPass').value = '';
     } catch (e) {
@@ -209,8 +210,8 @@ async function loadHosts() {
 
     try {
         const [hostsRes, statusRes] = await Promise.all([
-            fetch(`${API}?action=hosts`),
-            fetch(`${API}?action=status`)
+            fetch(`${API}?action=hosts`, { credentials: 'include' }),
+            fetch(`${API}?action=status`, { credentials: 'include' })
         ]);
 
         if (hostsRes.status === 401 || statusRes.status === 401) {
@@ -444,6 +445,7 @@ document.getElementById('deleteConfirmBtn').addEventListener('click', async () =
         const res = await fetch(`${API}?action=delete`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify({ host_name: hostName })
         });
         const data = await res.json();
@@ -488,6 +490,7 @@ async function handleFormSubmit(e) {
         const res = await fetch(`${API}?action=${action}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
             body: JSON.stringify(payload)
         });
         const data = await res.json();
@@ -511,7 +514,7 @@ async function handleFormSubmit(e) {
 // ---- Reload Nagios ----
 async function reloadNagios() {
     try {
-        const res = await fetch(`${API}?action=reload`, { method: 'POST' });
+        const res = await fetch(`${API}?action=reload`, { method: 'POST', credentials: 'include' });
         const data = await res.json();
         if (!data.success) {
             showToast('Advertencia: Nagios no se pudo recargar', 'error');
@@ -624,7 +627,13 @@ function renderHostSummaryCard(host, status) {
 
 async function loadHistory(hostName, range) {
     try {
-        const res = await fetch(`${API}?action=history&host=${encodeURIComponent(hostName)}&range=${range}`);
+        const res = await fetch(`${API}?action=history&host=${encodeURIComponent(hostName)}&range=${range}`, { credentials: 'include' });
+
+        if (res.status === 401) {
+            showLogin();
+            return;
+        }
+
         const data = await res.json();
 
         if (data.error) {
