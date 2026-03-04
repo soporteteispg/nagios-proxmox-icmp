@@ -52,6 +52,9 @@ apt-get install -y -qq \
     iputils-ping \
     curl
 
+# Asegurar que ping funcione en contenedores LXC (requiere setuid)
+chmod u+s /bin/ping 2>/dev/null || true
+
 echo "   ✅ Dependencias instaladas"
 
 # ---- 2. Crear usuario y grupo Nagios ----
