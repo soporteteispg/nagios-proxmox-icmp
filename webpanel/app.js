@@ -44,6 +44,16 @@ const $loginForm = document.getElementById('loginForm');
 const $loginError = document.getElementById('loginError');
 const $loggedUsername = document.getElementById('loggedUsername');
 
+const AUTH_KEY = 'nagios_auth_token';
+
+// Helper que agrega el token a todos los fetch automáticamente
+function apiFetch(url, options = {}) {
+    const token = localStorage.getItem(AUTH_KEY);
+    options.headers = options.headers || {};
+    if (token) options.headers['Authorization'] = 'Bearer ' + token;
+    return fetch(url, options);
+}
+
 // ---- Init ----
 document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
@@ -53,13 +63,18 @@ document.addEventListener('DOMContentLoaded', () => {
 // ===================== AUTH =====================
 
 async function checkAuth() {
+    const token = localStorage.getItem(AUTH_KEY);
+    if (!token) {
+        showLogin();
+        return;
+    }
     try {
-        const res = await fetch(`${API}?action=check_auth`, { credentials: 'include' });
+        const res = await apiFetch(`${API}?action=check_auth`);
         const data = await res.json();
-
-        if (data.success) {
-            showApp(data.username);
+        if (res.ok && data.success) {
+            showApp(data.username || localStorage.getItem('nagios_username') || 'admin');
         } else {
+            localStorage.removeItem(AUTH_KEY);
             showLogin();
         }
     } catch (err) {
@@ -100,14 +115,15 @@ $loginForm.addEventListener('submit', async (e) => {
         const res = await fetch(`${API}?action=login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
             body: JSON.stringify({ username, password })
         });
 
         const data = await res.json();
 
         if (res.ok && data.success) {
-            showApp(username);
+            localStorage.setItem(AUTH_KEY, data.token);
+            localStorage.setItem('nagios_username', data.username);
+            showApp(data.username);
         } else {
             $loginError.textContent = data.error || 'Credenciales inválidas';
             $loginError.style.display = 'block';
@@ -123,12 +139,12 @@ $loginForm.addEventListener('submit', async (e) => {
 
 async function logout() {
     try {
-        await fetch(`${API}?action=logout`, { credentials: 'include' });
-        showLogin();
-        document.getElementById('loginPass').value = '';
-    } catch (e) {
-        console.error(e);
-    }
+        await apiFetch(`${API}?action=logout`);
+    } catch (e) { }
+    localStorage.removeItem(AUTH_KEY);
+    localStorage.removeItem('nagios_username');
+    showLogin();
+    document.getElementById('loginPass').value = '';
 }
 
 // ===================== APP LOGIC =====================
@@ -210,8 +226,8 @@ async function loadHosts() {
 
     try {
         const [hostsRes, statusRes] = await Promise.all([
-            fetch(`${API}?action=hosts`, { credentials: 'include' }),
-            fetch(`${API}?action=status`, { credentials: 'include' })
+            apiFetch(`${API}?action=hosts`),
+            apiFetch(`${API}?action=status`)
         ]);
 
         if (hostsRes.status === 401 || statusRes.status === 401) {
@@ -442,10 +458,9 @@ document.getElementById('deleteConfirmBtn').addEventListener('click', async () =
     closeDeleteModal();
 
     try {
-        const res = await fetch(`${API}?action=delete`, {
+        const res = await apiFetch(`${API}?action=delete`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
             body: JSON.stringify({ host_name: hostName })
         });
         const data = await res.json();
@@ -487,10 +502,9 @@ async function handleFormSubmit(e) {
     $btnSubmit.textContent = 'Guardando...';
 
     try {
-        const res = await fetch(`${API}?action=${action}`, {
+        const res = await apiFetch(`${API}?action=${action}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
             body: JSON.stringify(payload)
         });
         const data = await res.json();
@@ -514,7 +528,7 @@ async function handleFormSubmit(e) {
 // ---- Reload Nagios ----
 async function reloadNagios() {
     try {
-        const res = await fetch(`${API}?action=reload`, { method: 'POST', credentials: 'include' });
+        const res = await apiFetch(`${API}?action=reload`, { method: 'POST' });
         const data = await res.json();
         if (!data.success) {
             showToast('Advertencia: Nagios no se pudo recargar', 'error');
@@ -627,7 +641,7 @@ function renderHostSummaryCard(host, status) {
 
 async function loadHistory(hostName, range) {
     try {
-        const res = await fetch(`${API}?action=history&host=${encodeURIComponent(hostName)}&range=${range}`, { credentials: 'include' });
+        const res = await apiFetch(`${API}?action=history&host=${encodeURIComponent(hostName)}&range=${range}`);
 
         if (res.status === 401) {
             showLogin();

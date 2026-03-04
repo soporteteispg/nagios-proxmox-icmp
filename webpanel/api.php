@@ -15,20 +15,12 @@
  *   GET    /api.php?action=history&host=X&range=24h → Historial RRD de un host
  */
 
-session_start();
+session_write_close(); // no usamos sessions, las cerramos de inmediato
 
 header('Content-Type: application/json; charset=utf-8');
-// Access-Control-Allow-Origin no puede ser '*' cuando se usan credenciales (cookies de sesión)
-$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
-if ($origin) {
-    header("Access-Control-Allow-Origin: $origin");
-}
-else {
-    header('Access-Control-Allow-Origin: *');
-}
+header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
-header('Access-Control-Allow-Credentials: true');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
@@ -46,19 +38,54 @@ define('NAGIOS_LOG', '/usr/local/nagios/var/nagios.log');
 define('NAGIOS_ARCHIVE_DIR', '/usr/local/nagios/var/archives');
 // =========================================================
 
+// --- Clave secreta para firmar tokens HMAC ---
+// Cambiar este valor invalida todos los tokens activos
+define('AUTH_SECRET', 'nagios-icmp-key-2024');
+
+// --- Generar token firmado (válido por 24h) ---
+function generateToken(string $username): string
+{
+    $day = floor(time() / 86400);
+    $sig = hash_hmac('sha256', $username . '|' . $day, AUTH_SECRET);
+    return base64_encode($username . '|' . $sig);
+}
+
+// --- Validar token ---
+function validateToken(string $token): ?string
+{
+    $decoded = base64_decode($token, true);
+    if (!$decoded)
+        return null;
+    $pos = strpos($decoded, '|');
+    if ($pos === false)
+        return null;
+    $username = substr($decoded, 0, $pos);
+    $sig = substr($decoded, $pos + 1);
+    $expected = generateToken($username);
+    $expDecoded = base64_decode($expected, true);
+    $expSig = substr($expDecoded, strpos($expDecoded, '|') + 1);
+    if (!hash_equals($expSig, $sig))
+        return null;
+    return $username;
+}
+
 // --- Archivo de credenciales ---
 $authFile = __DIR__ . '/auth.php';
 $credentials = file_exists($authFile) ? include($authFile) : ['users' => []];
 
 $action = $_GET['action'] ?? '';
 
-// --- Middleware de Autenticación ---
-// Rutas públicas: login
+// --- Middleware de Autenticación por Token HMAC ---
 $publicActions = ['login'];
 
 if (!in_array($action, $publicActions)) {
-    // Si no está logueado, bloqueamos la petición
-    if (!isset($_SESSION['authenticated']) || $_SESSION['authenticated'] !== true) {
+    $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+    $token = '';
+    if (preg_match('/Bearer\s+(.+)/i', $authHeader, $m)) {
+        $token = trim($m[1]);
+    }
+    $tokenUser = $token ? validateToken($token) : null;
+    if (!$tokenUser) {
         http_response_code(401);
         echo json_encode(['error' => 'No autorizado', 'code' => 401]);
         exit;
@@ -73,9 +100,8 @@ try {
             $password = $data['password'] ?? '';
 
             if (isset($credentials['users'][$username]) && password_verify($password, $credentials['users'][$username])) {
-                $_SESSION['authenticated'] = true;
-                $_SESSION['username'] = $username;
-                echo json_encode(['success' => true]);
+                $token = generateToken($username);
+                echo json_encode(['success' => true, 'token' => $token, 'username' => $username]);
             }
             else {
                 http_response_code(401);
@@ -84,13 +110,13 @@ try {
             break;
 
         case 'logout':
-            session_destroy();
+            // El logout es del lado cliente (borra el token del localStorage)
             echo json_encode(['success' => true]);
             break;
 
         case 'check_auth':
-            // Si llegó acá es porque pasó el middleware, por ende está logueado
-            echo json_encode(['success' => true, 'username' => $_SESSION['username'] ?? '']);
+            // Si llegó acá es porque el middleware validó el token
+            echo json_encode(['success' => true, 'username' => $tokenUser ?? '']);
             break;
         case 'hosts':
             echo json_encode(getHosts());
