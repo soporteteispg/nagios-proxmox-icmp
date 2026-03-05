@@ -17,6 +17,9 @@
 
 session_write_close(); // no usamos sessions, las cerramos de inmediato
 
+ini_set('display_errors', '0'); // Evita que Warnings arruinen la salida JSON
+error_reporting(E_ALL);
+
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
@@ -53,7 +56,7 @@ function generateToken(string $username): string
 // --- Validar token ---
 function validateToken(string $token): ?string
 {
-    $decoded = base64_decode($token, true);
+    $decoded = base64_decode($token); // Removed strict mode to prevent padding issues
     if (!$decoded)
         return null;
     $parts = explode('|', $decoded);

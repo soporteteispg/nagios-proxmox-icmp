@@ -50,11 +50,17 @@ const AUTH_KEY = 'nagios_auth_token';
 function apiFetch(url, options = {}) {
     const token = localStorage.getItem(AUTH_KEY);
     options.headers = options.headers || {};
+
+    let finalUrl = url;
     if (token) {
         options.headers['Authorization'] = 'Bearer ' + token;
         options.headers['X-Nagios-Auth'] = token;
+
+        // FOOLPROOF FALLBACK: Append token to URL to bypass Apache stripping completely
+        const separator = finalUrl.includes('?') ? '&' : '?';
+        finalUrl = finalUrl + separator + 'token=' + encodeURIComponent(token);
     }
-    return fetch(url, options);
+    return fetch(finalUrl, options);
 }
 
 // ---- Init ----
