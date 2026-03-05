@@ -3,6 +3,8 @@
  * Lógica del frontend: carga de datos, CRUD de hosts, auto-refresh
  */
 
+console.log("Nagios Web Panel - vStateless Auth Loaded");
+
 const API = 'api.php';
 let allHosts = [];
 let allStatuses = {};
