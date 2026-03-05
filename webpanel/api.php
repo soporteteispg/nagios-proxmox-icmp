@@ -54,9 +54,9 @@ try {
     )");
     @chmod($dbFile, 0666);
 }
-catch (Exception $e) {
-    http_response_code(500);
-    echo json_encode(['error' => 'Error BD: ' . $e->getMessage(), 'success' => false]);
+catch (\Throwable $e) {
+    http_response_code(200); // 200 en lugar de 500 para evitar que Apache elimine el JSON y devuelva su propio HTML
+    echo json_encode(['error' => 'Vuelve a correr el comando apt-get de SQLite. Falló la BD: ' . $e->getMessage(), 'success' => false]);
     exit;
 }
 
