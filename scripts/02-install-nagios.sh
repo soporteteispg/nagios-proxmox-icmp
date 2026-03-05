@@ -37,6 +37,7 @@ apt-get install -y -qq \
     apache2 \
     apache2-utils \
     php \
+    php-sqlite3 \
     libapache2-mod-php \
     libgd-dev \
     libssl-dev \

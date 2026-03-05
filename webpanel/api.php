@@ -41,41 +41,42 @@ define('NAGIOS_LOG', '/usr/local/nagios/var/nagios.log');
 define('NAGIOS_ARCHIVE_DIR', '/usr/local/nagios/var/archives');
 // =========================================================
 
-// --- Clave secreta para firmar tokens HMAC ---
-// Cambiar este valor invalida todos los tokens activos
-define('AUTH_SECRET', 'nagios-icmp-key-2024');
+// --- Archivo de tokens SQLite ---
+$dbFile = '/usr/local/nagios/var/tokens.sqlite'; // Usamos var porque auth apache tiene permisos ahí
+$db = new PDO('sqlite:' . $dbFile);
+$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+// Crear tabla si no existe
+$db->exec("CREATE TABLE IF NOT EXISTS active_tokens (
+    token TEXT PRIMARY KEY,
+    username TEXT NOT NULL,
+    expires_at INTEGER NOT NULL
+)");
 
-// --- Generar token firmado (válido por 24h) ---
+// --- Generar token único ---
 function generateToken(string $username): string
 {
-    $time = time();
-    $sig = hash_hmac('sha256', $username . '|' . $time, AUTH_SECRET);
-    return base64_encode($username . '|' . $time . '|' . $sig);
+    global $db;
+    $token = bin2hex(random_bytes(32)); // Token criptográfico fuerte pero simple alfanumérico
+    $expires = time() + 86400; // 24hs reales
+
+    $stmt = $db->prepare("INSERT INTO active_tokens (token, username, expires_at) VALUES (?, ?, ?)");
+    $stmt->execute([$token, $username, $expires]);
+
+    return $token;
 }
 
-// --- Validar token ---
+// --- Validar token contra base de datos ---
 function validateToken(string $token): ?string
 {
-    $decoded = base64_decode($token); // Removed strict mode to prevent padding issues
-    if (!$decoded)
-        return null;
-    $parts = explode('|', $decoded);
-    if (count($parts) !== 3)
-        return null;
+    global $db;
+    // Limpiar tokens expirados antes de validar
+    $db->exec("DELETE FROM active_tokens WHERE expires_at < " . time());
 
-    [$username, $time, $sig] = $parts;
+    $stmt = $db->prepare("SELECT username FROM active_tokens WHERE token = ? AND expires_at >= ?");
+    $stmt->execute([$token, time()]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    // Verificar vigencia (24h)
-    if (time() - intval($time) > 86400)
-        return null;
-    if (time() - intval($time) < -3600)
-        return null;
-
-    $expectedSig = hash_hmac('sha256', $username . '|' . $time, AUTH_SECRET);
-    if (!hash_equals($expectedSig, $sig))
-        return null;
-
-    return $username;
+    return $row ? $row['username'] : null;
 }
 
 // --- Archivo de credenciales ---
@@ -133,7 +134,12 @@ try {
             break;
 
         case 'logout':
-            // El logout es del lado cliente (borra el token del localStorage)
+            // Logout server-side: Borrar token de la base y cliente-side
+            $token_to_remove = $_POST['token'] ?? $_GET['token'] ?? null;
+            if ($token_to_remove) {
+                $stmt = $db->prepare("DELETE FROM active_tokens WHERE token = ?");
+                $stmt->execute([$token_to_remove]);
+            }
             echo json_encode(['success' => true]);
             break;
 
