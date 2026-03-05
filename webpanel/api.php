@@ -43,7 +43,7 @@ define('NAGIOS_ARCHIVE_DIR', '/usr/local/nagios/var/archives');
 
 // --- Archivo de tokens SQLite ---
 try {
-    $dbFile = '/tmp/nagios_tokens.sqlite'; // Directorio temporal 100% escribible
+    $dbFile = __DIR__ . '/nagios_tokens.sqlite'; // Usamos el directorio local en vez de /tmp para persistencia
     $db = new PDO('sqlite:' . $dbFile);
     $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     // Crear tabla si no existe
@@ -77,8 +77,18 @@ function generateToken(string $username): string
 function validateToken(string $token): ?string
 {
     global $db;
-    // Limpiar tokens expirados antes de validar
-    $db->exec("DELETE FROM active_tokens WHERE expires_at < " . time());
+    try {
+        // Limpiar tokens expirados antes de validar. En SQLite concurrencia
+        // esto puede fallar "database is locked". Ignoramos ese error específico.
+        $db->exec("DELETE FROM active_tokens WHERE expires_at < " . time());
+    }
+    catch (\PDOException $e) {
+        // Ignorar "database is locked" (error code 5) durante el cleanup concurrentemente
+        if (strpos($e->getMessage(), 'locked') === false && $e->getCode() != 5) {
+            // Logear si es un error distinto, pero no tirar 500 para una simple limpieza
+            error_log("Nagios Panel API - Error limpiando tokens expirados: " . $e->getMessage());
+        }
+    }
 
     $stmt = $db->prepare("SELECT username FROM active_tokens WHERE token = ? AND expires_at >= ?");
     $stmt->execute([$token, time()]);
@@ -220,8 +230,15 @@ function getHosts()
     $hosts = [];
     $files = glob(HOSTS_DIR . '/*.cfg');
 
+    if ($files === false) {
+        return ['hosts' => []]; // Fallback si no hay permisos de lectura en el direcotrio
+    }
+
     foreach ($files as $file) {
-        $content = file_get_contents($file);
+        $content = @file_get_contents($file);
+        if ($content === false)
+            continue; // Ignorar si no se pudo leer el archivo
+
         $filename = basename($file);
 
         // Parsear definiciones de host
@@ -507,9 +524,16 @@ function parseBlock($block)
     $result = [];
     $lines = explode("\n", $block);
     foreach ($lines as $line) {
+        // Remover cualquier comentario inline (después de ;) de la línea primero
+        $commentPos = strpos($line, ';');
+        if ($commentPos !== false) {
+            $line = substr($line, 0, $commentPos);
+        }
+
         $line = trim($line);
-        if (empty($line) || $line[0] === '#' || $line[0] === ';')
+        if (empty($line) || $line[0] === '#')
             continue;
+
         if (preg_match('/^(\S+)\s+(.+)$/', $line, $m)) {
             $result[$m[1]] = trim($m[2]);
         }
