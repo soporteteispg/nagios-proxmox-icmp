@@ -220,8 +220,9 @@ function setupEventListeners() {
     });
 
     // History modal
-    document.getElementById('historyClose').addEventListener('click', closeHistoryModal);
-    $historyOverlay.addEventListener('click', e => { if (e.target === $historyOverlay) closeHistoryModal(); });
+    const btnHistoryClose = document.getElementById('historyClose');
+    if (btnHistoryClose) btnHistoryClose.addEventListener('click', closeHistoryModal);
+    if ($historyOverlay) $historyOverlay.addEventListener('click', e => { if (e.target === $historyOverlay) closeHistoryModal(); });
 
     // Range pills
     document.querySelectorAll('.range-pill').forEach(pill => {
@@ -240,7 +241,7 @@ function setupEventListeners() {
 
 // ---- Data Loading ----
 async function loadHosts() {
-    $loading.style.display = 'flex';
+    if ($loading) $loading.style.display = 'flex';
     $hostsBody.innerHTML = ''; // Assuming $tableBody is $hostsBody
 
     try {
@@ -273,7 +274,7 @@ async function loadHosts() {
                 <div class="empty-state-text">No se pudo cargar la info de los hosts. Esperando próximo intento...</div>
             </td></tr>`;
     } finally {
-        $loading.style.display = 'none';
+        if ($loading) $loading.style.display = 'none';
     }
 }
 
