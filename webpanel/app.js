@@ -82,12 +82,20 @@ async function checkAuth() {
         const data = await res.json();
         if (res.ok && data.success) {
             showApp(data.username || localStorage.getItem('nagios_username') || 'admin');
-        } else {
+        } else if (res.status === 401) {
+            // Solo borrar el token explícitamente cuando el servidor dice que es inválido
             localStorage.removeItem(AUTH_KEY);
             showLogin();
+        } else {
+            // Es un 500 Server Error o error de red, NO borramos el token
+            // Mostramos la app igual y los próximos fetch confirmarán si sigue roto
+            console.warn("Fallo no fatal validando auth:", res.status);
+            showApp(localStorage.getItem('nagios_username') || 'admin');
         }
     } catch (err) {
-        showLogin();
+        // Fallo de red severo. No borrarmos el token.
+        console.warn("API de Auth inalcanzable, manteniéndose logueado...", err);
+        showApp(localStorage.getItem('nagios_username') || 'admin');
     }
 }
 
@@ -254,12 +262,13 @@ async function loadHosts() {
         renderTable();
         $lastUpdate.textContent = `Actualizado: ${formatTime(new Date())}`;
     } catch (err) {
+        // En un error de carga, verificamos si deberíamos patear al usuario
         console.error('Error cargando datos:', err);
-        showToast('Error al cargar datos del servidor', 'error');
+        showToast('Error de conexión o timeout cargando hosts', 'error');
         $hostsBody.innerHTML = `
             <tr><td colspan="8" class="empty-state">
                 <div class="empty-state-icon">⚠️</div>
-                <div class="empty-state-text">No se pudo conectar con la API</div>
+                <div class="empty-state-text">No se pudo cargar la info de los hosts. Esperando próximo intento...</div>
             </td></tr>`;
     } finally {
         $loading.style.display = 'none';

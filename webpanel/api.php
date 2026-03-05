@@ -41,65 +41,47 @@ define('NAGIOS_LOG', '/usr/local/nagios/var/nagios.log');
 define('NAGIOS_ARCHIVE_DIR', '/usr/local/nagios/var/archives');
 // =========================================================
 
-// --- Archivo de tokens SQLite ---
-try {
-    $dbFile = __DIR__ . '/nagios_tokens.sqlite'; // Usamos el directorio local en vez de /tmp para persistencia
-    $db = new PDO('sqlite:' . $dbFile);
-    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    // Crear tabla si no existe
-    $db->exec("CREATE TABLE IF NOT EXISTS active_tokens (
-        token TEXT PRIMARY KEY,
-        username TEXT NOT NULL,
-        expires_at INTEGER NOT NULL
-    )");
-    @chmod($dbFile, 0666);
-}
-catch (\Throwable $e) {
-    http_response_code(200); // 200 en lugar de 500 para evitar que Apache elimine el JSON y devuelva su propio HTML
-    echo json_encode(['error' => 'Vuelve a correr el comando apt-get de SQLite. Falló la BD: ' . $e->getMessage(), 'success' => false]);
-    exit;
-}
-
-// --- Generar token único ---
-function generateToken(string $username): string
-{
-    global $db;
-    $token = bin2hex(random_bytes(32)); // Token criptográfico fuerte pero simple alfanumérico
-    $expires = time() + 86400; // 24hs reales
-
-    $stmt = $db->prepare("INSERT INTO active_tokens (token, username, expires_at) VALUES (?, ?, ?)");
-    $stmt->execute([$token, $username, $expires]);
-
-    return $token;
-}
-
-// --- Validar token contra base de datos ---
-function validateToken(string $token): ?string
-{
-    global $db;
-    try {
-        // Limpiar tokens expirados antes de validar. En SQLite concurrencia
-        // esto puede fallar "database is locked". Ignoramos ese error específico.
-        $db->exec("DELETE FROM active_tokens WHERE expires_at < " . time());
-    }
-    catch (\PDOException $e) {
-        // Ignorar "database is locked" (error code 5) durante el cleanup concurrentemente
-        if (strpos($e->getMessage(), 'locked') === false && $e->getCode() != 5) {
-            // Logear si es un error distinto, pero no tirar 500 para una simple limpieza
-            error_log("Nagios Panel API - Error limpiando tokens expirados: " . $e->getMessage());
-        }
-    }
-
-    $stmt = $db->prepare("SELECT username FROM active_tokens WHERE token = ? AND expires_at >= ?");
-    $stmt->execute([$token, time()]);
-    $row = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    return $row ? $row['username'] : null;
-}
-
 // --- Archivo de credenciales ---
 $authFile = __DIR__ . '/auth.php';
 $credentials = file_exists($authFile) ? include($authFile) : ['users' => []];
+
+// --- Firmar y generar token ---
+function generateToken(string $username): string
+{
+    global $credentials;
+    $userHash = $credentials['users'][$username] ?? 'unknown';
+    // Se concatena un secreto estático más la fecha del día para firmas simples de 24hs
+    $secret = "nagios_stateless_" . date('Y-m-d') . $userHash;
+    $signature = hash('sha256', $username . $secret);
+    return base64_encode($username . '::' . $signature);
+}
+
+// --- Validar firma del token ---
+function validateToken(string $token): ?string
+{
+    global $credentials;
+    $decoded = base64_decode($token);
+    if (!$decoded || strpos($decoded, '::') === false) {
+        return null;
+    }
+
+    list($username, $signature) = explode('::', $decoded, 2);
+
+    // Generar la firma que deberia tener hoy
+    $userHash = $credentials['users'][$username] ?? 'unknown';
+    $secretToday = "nagios_stateless_" . date('Y-m-d') . $userHash;
+    $expectedSignatureToday = hash('sha256', $username . $secretToday);
+
+    // Tambien permitir la firma de ayer para evitar desconexiones a la medianoche
+    $secretYesterday = "nagios_stateless_" . date('Y-m-d', strtotime('-1 day')) . $userHash;
+    $expectedSignatureYesterday = hash('sha256', $username . $secretYesterday);
+
+    if (hash_equals($expectedSignatureToday, $signature) || hash_equals($expectedSignatureYesterday, $signature)) {
+        return $username;
+    }
+
+    return null;
+}
 
 $action = $_GET['action'] ?? '';
 
@@ -152,12 +134,8 @@ try {
             break;
 
         case 'logout':
-            // Logout server-side: Borrar token de la base y cliente-side
-            $token_to_remove = $_POST['token'] ?? $_GET['token'] ?? null;
-            if ($token_to_remove) {
-                $stmt = $db->prepare("DELETE FROM active_tokens WHERE token = ?");
-                $stmt->execute([$token_to_remove]);
-            }
+            // Logout server-side: Stateless auth doesn't require server cleanup
+            // Just return success so the client deletes their local token
             echo json_encode(['success' => true]);
             break;
 
