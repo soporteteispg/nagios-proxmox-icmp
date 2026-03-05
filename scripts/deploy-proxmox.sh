@@ -132,6 +132,38 @@ if ! pct status "$CTID" | grep -q "running"; then
     sleep 5
 fi
 
+# ---- 4. Obtener IP y Esperar Nateo ----
+echo ""
+echo "============================================"
+echo "  📌 CONFIGURACIÓN DE RED (NATEO)"
+echo "============================================"
+# Intentamos obtener la IP un par de veces por si tarda en levantar red
+for i in {1..5}; do
+    CONTAINER_IP=$(pct exec "$CTID" -- hostname -I | awk '{print $1}')
+    if [ -n "$CONTAINER_IP" ]; then break; fi
+    sleep 2
+done
+
+if [ -z "$CONTAINER_IP" ]; then
+    echo "  ⚠️ No se pudo detectar la IP del contenedor automáticamente."
+    echo "  Revisa la red de tu Proxmox (ej: vmbr0 DHCP)."
+else
+    echo "  El contenedor $CTID ya está corriendo con la IP:"
+    echo "  → $CONTAINER_IP"
+    echo ""
+    echo "  ⚠️ IMPORTANTE:"
+    echo "  Si este contenedor no tiene internet por sí solo y necesita un"
+    echo "  NAT/Port Forward o reglas de firewall en tu router para salir,"
+    echo "  CONFIGURALO AHORA MISMO ANTES de que el script intente descargar paquetes."
+    echo ""
+    read -r -p "  ¿Ya configuraste el router/NAT o querés continuar con la instalación? (s/n): " CONTINUAR_INSTALL
+    if [[ "$CONTINUAR_INSTALL" != "s" && "$CONTINUAR_INSTALL" != "S" ]]; then
+        echo "  Instalación de paquetes pausada. Podés resumir ejecutando nuevamente"
+        echo "  este deployer cuando tengas red, y elegir 'actualizar'."
+        exit 0
+    fi
+fi
+
 # ---- 4. Copiar archivos al contenedor ----
 echo ""
 echo ">> Copiando archivos al contenedor $CTID..."
@@ -160,28 +192,6 @@ pct push "$CTID" "$CLONE_DIR/webpanel/app.js" /root/webpanel/app.js
 pct push "$CTID" "$CLONE_DIR/webpanel/api.php" /root/webpanel/api.php
 
 echo "   ✅ Todos los archivos copiados"
-
-# ---- 5. Obtener IP y Esperar Nateo ----
-echo ""
-echo "============================================"
-echo "  📌 CONFIGURACIÓN DE RED (NATEO)"
-echo "============================================"
-CONTAINER_IP=$(pct exec "$CTID" -- hostname -I | awk '{print $1}')
-echo "  El contenedor $CTID ya está corriendo con la IP:"
-echo "  → $CONTAINER_IP"
-echo ""
-echo "  ⚠️ IMPORTANTE:"
-echo "  Si necesitas acceder desde afuera (Internet) y vas a mapear"
-echo "  un puerto en tu router hacia esta IP local ($CONTAINER_IP),"
-echo "  este es el momento ideal para hacerlo ANTES de instalar Nagios."
-echo ""
-read -r -p "  ¿Ya configuraste el router/NAT o querés continuar con la instalación? (s/n): " CONTINUAR_INSTALL
-if [[ "$CONTINUAR_INSTALL" != "s" && "$CONTINUAR_INSTALL" != "S" ]]; then
-    echo "  Instalación de paquetes pausada. Podés resuming ejecutando manualmente:"
-    echo "  pct exec $CTID -- bash /root/02-install-nagios.sh"
-    echo "  pct exec $CTID -- bash /root/04-install-webpanel.sh"
-    exit 0
-fi
 
 # ---- 6. Instalar Nagios y Webpanel ----
 echo ""
