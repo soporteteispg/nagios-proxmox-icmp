@@ -161,7 +161,29 @@ pct push "$CTID" "$CLONE_DIR/webpanel/api.php" /root/webpanel/api.php
 
 echo "   ✅ Todos los archivos copiados"
 
-# ---- 5. Instalar Nagios ----
+# ---- 5. Obtener IP y Esperar Nateo ----
+echo ""
+echo "============================================"
+echo "  📌 CONFIGURACIÓN DE RED (NATEO)"
+echo "============================================"
+CONTAINER_IP=$(pct exec "$CTID" -- hostname -I | awk '{print $1}')
+echo "  El contenedor $CTID ya está corriendo con la IP:"
+echo "  → $CONTAINER_IP"
+echo ""
+echo "  ⚠️ IMPORTANTE:"
+echo "  Si necesitas acceder desde afuera (Internet) y vas a mapear"
+echo "  un puerto en tu router hacia esta IP local ($CONTAINER_IP),"
+echo "  este es el momento ideal para hacerlo ANTES de instalar Nagios."
+echo ""
+read -r -p "  ¿Ya configuraste el router/NAT o querés continuar con la instalación? (s/n): " CONTINUAR_INSTALL
+if [[ "$CONTINUAR_INSTALL" != "s" && "$CONTINUAR_INSTALL" != "S" ]]; then
+    echo "  Instalación de paquetes pausada. Podés resuming ejecutando manualmente:"
+    echo "  pct exec $CTID -- bash /root/02-install-nagios.sh"
+    echo "  pct exec $CTID -- bash /root/04-install-webpanel.sh"
+    exit 0
+fi
+
+# ---- 6. Instalar Nagios y Webpanel ----
 echo ""
 echo "============================================"
 echo "  📦 Instalando Nagios Core..."
@@ -170,13 +192,11 @@ echo "============================================"
 echo ""
 pct exec "$CTID" -- bash /root/02-install-nagios.sh
 
-# ---- 6. Instalar Panel Web ----
 echo ""
 echo ">> Instalando Panel Web..."
 pct exec "$CTID" -- bash /root/04-install-webpanel.sh
 
-# ---- 7. Obtener IP del contenedor ----
-CONTAINER_IP=$(pct exec "$CTID" -- hostname -I | awk '{print $1}')
+# ---- 7. Finalización ----
 
 echo ""
 echo "============================================"
