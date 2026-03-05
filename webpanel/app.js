@@ -192,20 +192,33 @@ async function logout() {
 
 function setupEventListeners() {
     // Add host button
-    document.getElementById('btnAddHost').addEventListener('click', () => openAddModal());
+    const btnAddHost = document.getElementById('btnAddHost');
+    if (btnAddHost) {
+        btnAddHost.addEventListener('click', () => openAddModal());
+    }
 
     // Modal close
-    document.getElementById('modalClose').addEventListener('click', closeModal);
-    document.getElementById('btnCancel').addEventListener('click', closeModal);
-    $modalOverlay.addEventListener('click', e => { if (e.target === $modalOverlay) closeModal(); });
+    const modalClose = document.getElementById('modalClose');
+    if (modalClose) modalClose.addEventListener('click', closeModal);
+    const btnCancel = document.getElementById('btnCancel');
+    if (btnCancel) btnCancel.addEventListener('click', closeModal);
+    if ($modalOverlay) {
+        $modalOverlay.addEventListener('click', e => { if (e.target === $modalOverlay) closeModal(); });
+    }
 
     // Delete modal
-    document.getElementById('deleteClose').addEventListener('click', closeDeleteModal);
-    document.getElementById('deleteCancelBtn').addEventListener('click', closeDeleteModal);
-    $deleteOverlay.addEventListener('click', e => { if (e.target === $deleteOverlay) closeDeleteModal(); });
+    const deleteClose = document.getElementById('deleteClose');
+    if (deleteClose) deleteClose.addEventListener('click', closeDeleteModal);
+    const deleteCancelBtn = document.getElementById('deleteCancelBtn');
+    if (deleteCancelBtn) deleteCancelBtn.addEventListener('click', closeDeleteModal);
+    if ($deleteOverlay) {
+        $deleteOverlay.addEventListener('click', e => { if (e.target === $deleteOverlay) closeDeleteModal(); });
+    }
 
     // Form submit
-    $hostForm.addEventListener('submit', handleFormSubmit);
+    if ($hostForm) {
+        $hostForm.addEventListener('submit', handleFormSubmit);
+    }
 
     // ======================= ADMIN MANAGEMENT =======================
 
@@ -360,7 +373,9 @@ function setupEventListeners() {
             });
         }
     };
-    $searchInput.addEventListener('input', renderTable);
+    if ($searchInput) {
+        $searchInput.addEventListener('input', renderTable);
+    }
 
     // Tabs
     document.querySelectorAll('.tab').forEach(tab => {
@@ -386,16 +401,18 @@ function setupEventListeners() {
     });
 
     // Check level info cards
-    $formCheckLevel.addEventListener('change', () => {
-        const level = $formCheckLevel.value;
-        document.querySelectorAll('.info-card').forEach(card => {
-            card.classList.toggle('active', card.dataset.level === level);
+    if ($formCheckLevel) {
+        $formCheckLevel.addEventListener('change', () => {
+            const level = $formCheckLevel.value;
+            document.querySelectorAll('.info-card').forEach(card => {
+                card.classList.toggle('active', card.dataset.level === level);
+            });
         });
-    });
+    }
 
     // Auto-refresh toggle
-    $autoRefresh.addEventListener('change', startAutoRefresh);
-    $refreshInterval.addEventListener('change', startAutoRefresh);
+    if ($autoRefresh) $autoRefresh.addEventListener('change', startAutoRefresh);
+    if ($refreshInterval) $refreshInterval.addEventListener('change', startAutoRefresh);
 
     // Keyboard shortcuts
     document.addEventListener('keydown', e => {
