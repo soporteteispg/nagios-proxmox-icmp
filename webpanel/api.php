@@ -20,7 +20,7 @@ session_write_close(); // no usamos sessions, las cerramos de inmediato
 header('Content-Type: application/json; charset=utf-8');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, X-Nagios-Auth');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
@@ -45,9 +45,9 @@ define('AUTH_SECRET', 'nagios-icmp-key-2024');
 // --- Generar token firmado (válido por 24h) ---
 function generateToken(string $username): string
 {
-    $day = floor(time() / 86400);
-    $sig = hash_hmac('sha256', $username . '|' . $day, AUTH_SECRET);
-    return base64_encode($username . '|' . $sig);
+    $time = time();
+    $sig = hash_hmac('sha256', $username . '|' . $time, AUTH_SECRET);
+    return base64_encode($username . '|' . $time . '|' . $sig);
 }
 
 // --- Validar token ---
@@ -56,16 +56,22 @@ function validateToken(string $token): ?string
     $decoded = base64_decode($token, true);
     if (!$decoded)
         return null;
-    $pos = strpos($decoded, '|');
-    if ($pos === false)
+    $parts = explode('|', $decoded);
+    if (count($parts) !== 3)
         return null;
-    $username = substr($decoded, 0, $pos);
-    $sig = substr($decoded, $pos + 1);
-    $expected = generateToken($username);
-    $expDecoded = base64_decode($expected, true);
-    $expSig = substr($expDecoded, strpos($expDecoded, '|') + 1);
-    if (!hash_equals($expSig, $sig))
+
+    [$username, $time, $sig] = $parts;
+
+    // Verificar vigencia (24h)
+    if (time() - intval($time) > 86400)
         return null;
+    if (time() - intval($time) < -3600)
+        return null;
+
+    $expectedSig = hash_hmac('sha256', $username . '|' . $time, AUTH_SECRET);
+    if (!hash_equals($expectedSig, $sig))
+        return null;
+
     return $username;
 }
 
@@ -79,11 +85,25 @@ $action = $_GET['action'] ?? '';
 $publicActions = ['login'];
 
 if (!in_array($action, $publicActions)) {
-    $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+    $authHeader = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '';
     $token = '';
-    if (preg_match('/Bearer\s+(.+)/i', $authHeader, $m)) {
+
+    // Fallback si Apache elimina el header Authorization (sin CGIPassAuth On)
+    if (empty($authHeader) && function_exists('apache_request_headers')) {
+        $reqHeaders = apache_request_headers();
+        $authHeader = $reqHeaders['Authorization'] ?? $reqHeaders['authorization'] ?? '';
+    }
+
+    if (empty($authHeader) && isset($_SERVER['HTTP_X_NAGIOS_AUTH'])) {
+        $token = trim($_SERVER['HTTP_X_NAGIOS_AUTH']);
+    }
+    elseif (preg_match('/Bearer\s+(.+)/i', $authHeader, $m)) {
         $token = trim($m[1]);
     }
+    elseif (isset($_GET['token'])) {
+        $token = trim($_GET['token']);
+    }
+
     $tokenUser = $token ? validateToken($token) : null;
     if (!$tokenUser) {
         http_response_code(401);
@@ -141,6 +161,23 @@ try {
             break;
         case 'validate':
             echo json_encode(validateConfig());
+            break;
+        case 'debug':
+            // Endpoint to see if Apache is dropping Authorization header
+            $headers = [];
+            foreach ($_SERVER as $key => $value) {
+                if (substr($key, 0, 5) == 'HTTP_') {
+                    $headers[str_replace(' ', '-', ucwords(str_replace('_', ' ', strtolower(substr($key, 5)))))] = $value;
+                }
+            }
+            if (isset($_SERVER['CONTENT_TYPE']))
+                $headers['Content-Type'] = $_SERVER['CONTENT_TYPE'];
+            if (isset($_SERVER['CONTENT_LENGTH']))
+                $headers['Content-Length'] = $_SERVER['CONTENT_LENGTH'];
+            if (function_exists('apache_request_headers')) {
+                $headers = array_merge($headers, apache_request_headers());
+            }
+            echo json_encode(['headers' => $headers, 'token_user' => $tokenUser ?? null]);
             break;
         case 'history':
             $hostName = sanitizeName($_GET['host'] ?? '');

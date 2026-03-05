@@ -50,7 +50,10 @@ const AUTH_KEY = 'nagios_auth_token';
 function apiFetch(url, options = {}) {
     const token = localStorage.getItem(AUTH_KEY);
     options.headers = options.headers || {};
-    if (token) options.headers['Authorization'] = 'Bearer ' + token;
+    if (token) {
+        options.headers['Authorization'] = 'Bearer ' + token;
+        options.headers['X-Nagios-Auth'] = token;
+    }
     return fetch(url, options);
 }
 
