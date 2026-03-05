@@ -42,15 +42,23 @@ define('NAGIOS_ARCHIVE_DIR', '/usr/local/nagios/var/archives');
 // =========================================================
 
 // --- Archivo de tokens SQLite ---
-$dbFile = '/usr/local/nagios/var/tokens.sqlite'; // Usamos var porque auth apache tiene permisos ahí
-$db = new PDO('sqlite:' . $dbFile);
-$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-// Crear tabla si no existe
-$db->exec("CREATE TABLE IF NOT EXISTS active_tokens (
-    token TEXT PRIMARY KEY,
-    username TEXT NOT NULL,
-    expires_at INTEGER NOT NULL
-)");
+try {
+    $dbFile = '/tmp/nagios_tokens.sqlite'; // Directorio temporal 100% escribible
+    $db = new PDO('sqlite:' . $dbFile);
+    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+    // Crear tabla si no existe
+    $db->exec("CREATE TABLE IF NOT EXISTS active_tokens (
+        token TEXT PRIMARY KEY,
+        username TEXT NOT NULL,
+        expires_at INTEGER NOT NULL
+    )");
+    @chmod($dbFile, 0666);
+}
+catch (Exception $e) {
+    http_response_code(500);
+    echo json_encode(['error' => 'Error BD: ' . $e->getMessage(), 'success' => false]);
+    exit;
+}
 
 // --- Generar token único ---
 function generateToken(string $username): string
