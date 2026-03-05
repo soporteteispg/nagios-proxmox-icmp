@@ -7,7 +7,7 @@
     <title>Nagios ICMP Monitor — Panel de Control</title>
     <meta name="description" content="Panel de monitoreo ICMP para red interna y externa">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=stateless1">
+    <link rel="stylesheet" href="style.css?v=8">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <script
         src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
@@ -160,6 +160,7 @@
                 <button class="tab" data-tab="internal">🏠 Internos</button>
                 <button class="tab" data-tab="external">🌐 Externos</button>
                 <button class="tab" data-tab="down">🔴 Con Problemas</button>
+                <button class="tab" id="tabAdmin" data-tab="admin" style="display:none;">⚙️ Administración</button>
             </div>
             <div class="search-box">
                 <svg width="16" height="16" fill="none" stroke="#888" stroke-width="2" stroke-linecap="round">
@@ -197,6 +198,59 @@
             <!-- Loading Indicator -->
             <div id="loading" style="display: none; justify-content: center; align-items: center; padding: 20px;">
                 <div class="spinner"></div><span style="margin-left:10px;">Cargando...</span>
+            </div>
+        </section>
+
+        <!-- ========== ADMIN SECTION (Oculta por defecto) ========== -->
+        <section class="admin-wrapper" id="adminSection" style="display: none; padding: 20px; color: var(--text);">
+            <div class="admin-grid" style="display: grid; grid-template-columns: 1fr 2fr; gap: 20px;">
+                <!-- Panel Usuarios -->
+                <div class="card"
+                    style="background: var(--card-bg); border-radius: 12px; padding: 20px; border: 1px solid var(--border);">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h2 style="font-size: 1.2rem; margin:0;">Gestión de Usuarios</h2>
+                        <button class="btn btn-primary" onclick="openAddUserModal()"
+                            style="padding: 4px 10px; font-size: 0.85rem;">+ Nuevo</button>
+                    </div>
+                    <table class="hosts-table" style="margin-top:0;">
+                        <thead>
+                            <tr>
+                                <th>Usuario</th>
+                                <th>Rol</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersBody">
+                            <tr>
+                                <td colspan="3" class="text-center">Cargando...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Panel Logs -->
+                <div class="card"
+                    style="background: var(--card-bg); border-radius: 12px; padding: 20px; border: 1px solid var(--border);">
+                    <h2 style="font-size: 1.2rem; margin-top:0; margin-bottom: 15px;">Registro de Auditoría</h2>
+                    <div style="max-height: 400px; overflow-y: auto;">
+                        <table class="hosts-table" style="margin-top:0;">
+                            <thead>
+                                <tr>
+                                    <th>Fecha</th>
+                                    <th>Usuario</th>
+                                    <th>Acción</th>
+                                    <th>Detalles</th>
+                                </tr>
+                            </thead>
+                            <tbody id="auditBody">
+                                <tr>
+                                    <td colspan="4" class="text-center">Cargando...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -277,6 +331,39 @@
             </div>
         </div>
 
+        <!-- ========== MODAL: USER ADD/EDIT ========== -->
+        <div class="modal-overlay" id="userOverlay">
+            <div class="modal modal-sm" style="max-width: 450px;">
+                <div class="modal-header">
+                    <h2 id="userModalTitle">Crear Nuevo Usuario</h2>
+                    <button class="modal-close" id="userClose">&times;</button>
+                </div>
+                <form id="userForm">
+                    <input type="hidden" id="formUserAction" value="add">
+                    <div class="form-group">
+                        <label for="formUsername">Nombre de Usuario *</label>
+                        <input type="text" id="formUsername" required pattern="[a-zA-Z0-9_.-]+"
+                            title="Letras, números, puntos y guiones">
+                    </div>
+                    <div class="form-group">
+                        <label for="formUserPass">Contraseña *</label>
+                        <input type="password" id="formUserPass" minlength="4">
+                    </div>
+                    <div class="form-group">
+                        <label for="formUserRole">Nivel de Permisos</label>
+                        <select id="formUserRole" class="select-field">
+                            <option value="regular">Operador (Solo ABM de Hosts)</option>
+                            <option value="root">Administrador Root (Acceso Total)</option>
+                        </select>
+                    </div>
+                    <div class="modal-actions" style="margin-top: 25px;">
+                        <button type="button" class="btn btn-ghost" id="btnCancelUser">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">Guardar Usuario</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
         <!-- ========== MODAL: DELETE CONFIRMATION ========== -->
         <div class="modal-overlay" id="deleteOverlay">
             <div class="modal modal-sm">
@@ -345,7 +432,7 @@
         </div>
 
     </div> <!-- Fin Main App -->
-    <script src="app.js?v=7"></script>
+    <script src="app.js?v=8"></script>
 </body>
 
 </html>

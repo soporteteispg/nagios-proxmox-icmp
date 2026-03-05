@@ -46,7 +46,9 @@ const $loginForm = document.getElementById('loginForm');
 const $loginError = document.getElementById('loginError');
 const $loggedUsername = document.getElementById('loggedUsername');
 
-const AUTH_KEY = 'nagios_auth_token';
+const AUTH_KEY = 'nagios_token';
+const AUTH_USER = 'nagios_user';
+const AUTH_ROLE = 'nagios_role';
 
 // Helper que agrega el token a todos los fetch automáticamente
 function apiFetch(url, options = {}) {
@@ -83,21 +85,23 @@ async function checkAuth() {
         const res = await apiFetch(`${API}?action=check_auth`);
         const data = await res.json();
         if (res.ok && data.success) {
-            showApp(data.username || localStorage.getItem('nagios_username') || 'admin');
+            showApp(data.username || localStorage.getItem(AUTH_USER) || 'admin', data.role || localStorage.getItem(AUTH_ROLE) || 'regular');
         } else if (res.status === 401) {
             // Solo borrar el token explícitamente cuando el servidor dice que es inválido
             localStorage.removeItem(AUTH_KEY);
+            localStorage.removeItem(AUTH_USER);
+            localStorage.removeItem(AUTH_ROLE);
             showLogin();
         } else {
             // Es un 500 Server Error o error de red, NO borramos el token
             // Mostramos la app igual y los próximos fetch confirmarán si sigue roto
             console.warn("Fallo no fatal validando auth:", res.status);
-            showApp(localStorage.getItem('nagios_username') || 'admin');
+            showApp(localStorage.getItem(AUTH_USER) || 'admin', localStorage.getItem(AUTH_ROLE) || 'regular');
         }
     } catch (err) {
         // Fallo de red severo. No borrarmos el token.
         console.warn("API de Auth inalcanzable, manteniéndose logueado...", err);
-        showApp(localStorage.getItem('nagios_username') || 'admin');
+        showApp(localStorage.getItem(AUTH_USER) || 'admin', localStorage.getItem(AUTH_ROLE) || 'regular');
     }
 }
 
@@ -107,10 +111,26 @@ function showLogin() {
     if (refreshTimer) clearInterval(refreshTimer);
 }
 
-function showApp(username) {
+function showApp(username, role = 'regular') {
     if (username) $loggedUsername.textContent = username;
     $loginScreen.style.display = 'none';
     $appContainer.style.display = 'block';
+
+    // Apply Permissions
+    const btnAddHost = document.getElementById('btnAddHost');
+    const tabAdmin = document.getElementById('tabAdmin'); // Lo crearemos en el HTML en breve
+
+    if (role === 'root') {
+        if (btnAddHost) btnAddHost.style.display = 'inline-flex';
+        if (tabAdmin) tabAdmin.style.display = 'inline-block';
+        document.body.classList.add('role-root');
+        document.body.classList.remove('role-regular');
+    } else {
+        if (btnAddHost) btnAddHost.style.display = 'none';
+        if (tabAdmin) tabAdmin.style.display = 'none';
+        document.body.classList.remove('role-root');
+        document.body.classList.add('role-regular');
+    }
 
     // Iniciar app
     loadHosts();
@@ -141,8 +161,9 @@ $loginForm.addEventListener('submit', async (e) => {
 
         if (res.ok && data.success) {
             localStorage.setItem(AUTH_KEY, data.token);
-            localStorage.setItem('nagios_username', data.username);
-            showApp(data.username);
+            localStorage.setItem(AUTH_USER, data.username);
+            localStorage.setItem(AUTH_ROLE, data.role || 'regular');
+            showApp(data.username, data.role || 'regular');
         } else {
             $loginError.textContent = data.error || 'Credenciales inválidas';
             $loginError.style.display = 'block';
@@ -161,7 +182,8 @@ async function logout() {
         await apiFetch(`${API}?action=logout`);
     } catch (e) { }
     localStorage.removeItem(AUTH_KEY);
-    localStorage.removeItem('nagios_username');
+    localStorage.removeItem(AUTH_USER);
+    localStorage.removeItem(AUTH_ROLE);
     showLogin();
     document.getElementById('loginPass').value = '';
 }
@@ -185,7 +207,159 @@ function setupEventListeners() {
     // Form submit
     $hostForm.addEventListener('submit', handleFormSubmit);
 
-    // Search
+    // ======================= ADMIN MANAGEMENT =======================
+
+    async function loadUsers() {
+        try {
+            const res = await apiFetch(`${API}?action=user_list`);
+            const data = await res.json();
+            const tbody = document.getElementById('usersBody');
+            if (!tbody) return;
+
+            if (!data.users || data.users.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="3" class="text-center" style="padding: 20px;">No hay usuarios.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = data.users.map(u => `
+            <tr>
+                <td><strong>${u.username}</strong></td>
+                <td><span class="badge ${u.role === 'root' ? 'badge-purple' : 'badge-blue'}">${u.role}</span></td>
+                <td class="actions-cell">
+                    <button class="btn-icon" title="Editar" onclick="openEditUserModal('${u.username}', '${u.role}')">
+                        <svg width="16" height="16" fill="none" class="icon-edit" stroke="currentColor" stroke-width="2">
+                            <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                            <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                        </svg>
+                    </button>
+                    <button class="btn-icon text-danger" title="Eliminar" onclick="confirmDeleteUser('${u.username}')">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6" />
+                        </svg>
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+        } catch (e) {
+            showToast("Error cargando usuarios", "error");
+        }
+    }
+
+    async function loadAuditLogs() {
+        try {
+            const res = await apiFetch(`${API}?action=audit_logs`);
+            const data = await res.json();
+            const tbody = document.getElementById('auditBody');
+            if (!tbody) return;
+
+            if (!data.logs || data.logs.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="text-center" style="padding: 20px;">No hay registros de auditoría aún.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = data.logs.map(log => `
+            <tr>
+                <td class="monospaced" style="font-size: 0.85rem">${log.date}</td>
+                <td><strong>${log.user}</strong></td>
+                <td><span class="badge badge-gray">${log.action}</span></td>
+                <td style="color: var(--text-muted); font-size: 0.9rem">${log.details}</td>
+            </tr>
+        `).join('');
+        } catch (e) {
+            showToast("Error cargando logs", "error");
+        }
+    }
+
+    // User Modal Triggers
+    function openAddUserModal() {
+        document.getElementById('formUserAction').value = 'add';
+        document.getElementById('formUsername').value = '';
+        document.getElementById('formUsername').readOnly = false;
+        document.getElementById('formUserPass').value = '';
+        document.getElementById('formUserPass').placeholder = 'Contraseña Mínimo 4 chars';
+        document.getElementById('formUserPass').required = true;
+        document.getElementById('userModalTitle').textContent = 'Crear Nuevo Usuario';
+        document.getElementById('userOverlay').style.display = 'flex';
+    }
+
+    function openEditUserModal(username, role) {
+        document.getElementById('formUserAction').value = 'edit';
+        document.getElementById('formUsername').value = username;
+        document.getElementById('formUsername').readOnly = true;
+        document.getElementById('formUserRole').value = role;
+        document.getElementById('formUserPass').value = '';
+        document.getElementById('formUserPass').placeholder = '(Dejar en blanco para no cambiar)';
+        document.getElementById('formUserPass').required = false;
+        document.getElementById('userModalTitle').textContent = 'Editar Usuario ' + username;
+        document.getElementById('userOverlay').style.display = 'flex';
+    }
+
+    function handleUserModalClose() {
+        document.getElementById('userOverlay').style.display = 'none';
+    }
+
+    window.openAddUserModal = openAddUserModal;
+    window.openEditUserModal = openEditUserModal;
+
+    // Initialize Admin Events on Load
+    document.addEventListener('DOMContentLoaded', () => {
+
+        // User Form Submit
+        const userForm = document.getElementById('userForm');
+        if (userForm) {
+            userForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const action = document.getElementById('formUserAction').value;
+                const payload = {
+                    username: document.getElementById('formUsername').value,
+                    role: document.getElementById('formUserRole').value
+                };
+                const pass = document.getElementById('formUserPass').value;
+                if (pass) payload.password = pass;
+
+                try {
+                    const res = await apiFetch(`${API}?action=${action === 'add' ? 'user_add' : 'user_edit'}`, {
+                        method: 'POST',
+                        body: JSON.stringify(payload)
+                    });
+                    const data = await res.json();
+
+                    if (data.success) {
+                        showToast(data.message, 'success');
+                        handleUserModalClose();
+                        loadUsers();
+                        loadAuditLogs();
+                    } else {
+                        showToast(data.error || 'Error guardando usuario', 'error');
+                    }
+                } catch (err) {
+                    showToast('Error de red al guardar usuario', 'error');
+                }
+            });
+        }
+
+        const btnCloseUser = document.getElementById('userClose');
+        if (btnCloseUser) btnCloseUser.addEventListener('click', handleUserModalClose);
+        const btnCancelUser = document.getElementById('btnCancelUser');
+        if (btnCancelUser) btnCancelUser.addEventListener('click', handleUserModalClose);
+    });
+
+    window.confirmDeleteUser = function (username) {
+        if (confirm(`¿Estás seguro de que deseas ELIMINAR permanentemente al usuario '${username}'?`)) {
+            apiFetch(`${API}?action=user_delete`, {
+                method: 'POST',
+                body: JSON.stringify({ username })
+            }).then(res => res.json()).then(data => {
+                if (data.success) {
+                    showToast(data.message, 'success');
+                    loadUsers();
+                    loadAuditLogs();
+                } else {
+                    showToast(data.error, 'error');
+                }
+            });
+        }
+    };
     $searchInput.addEventListener('input', renderTable);
 
     // Tabs
@@ -193,8 +367,21 @@ function setupEventListeners() {
         tab.addEventListener('click', () => {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             tab.classList.add('active');
-            currentFilter = tab.dataset.tab;
-            renderTable();
+            const tabId = tab.dataset.tab;
+
+            if (tabId === 'admin') {
+                document.getElementById('hostsTable').style.display = 'none';
+                document.getElementById('summary').style.display = 'none';
+                document.getElementById('adminSection').style.display = 'block';
+                loadUsers();
+                loadAuditLogs();
+            } else {
+                document.getElementById('adminSection').style.display = 'none';
+                document.getElementById('summary').style.display = 'grid';
+                document.getElementById('hostsTable').style.display = 'table';
+                currentFilter = tabId;
+                renderTable();
+            }
         });
     });
 

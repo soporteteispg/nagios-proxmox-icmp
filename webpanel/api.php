@@ -45,11 +45,27 @@ define('NAGIOS_ARCHIVE_DIR', '/usr/local/nagios/var/archives');
 $authFile = __DIR__ . '/auth.php';
 $credentials = file_exists($authFile) ? include($authFile) : ['users' => []];
 
+// --- Archivo de Log de Auditoría ---
+$auditFile = __DIR__ . '/audit.log';
+
+function logAudit(string $username, string $action, string $details): void
+{
+    global $auditFile;
+    $date = date('Y-m-d H:i:s');
+    // Escape simple para no romper formato de una sola línea
+    $cleanDetails = str_replace(["\n", "\r"], " ", $details);
+    $logLine = "[$date] user:$username | action:$action | details:$cleanDetails\n";
+    @file_put_contents($auditFile, $logLine, FILE_APPEND);
+}
+
 // --- Firmar y generar token ---
 function generateToken(string $username): string
 {
     global $credentials;
-    $userHash = $credentials['users'][$username] ?? 'unknown';
+    // Ahora supportea Estructurua Compleja: ['hash' => '..', 'role' => '..'] o String Simple para retrocompatibilidad
+    $userData = $credentials['users'][$username] ?? null;
+    $userHash = is_array($userData) ? ($userData['hash'] ?? 'unknown') : ($userData ?? 'unknown');
+
     // Se concatena un secreto estático más la fecha del día para firmas simples de 24hs
     $secret = "nagios_stateless_" . date('Y-m-d') . $userHash;
     $signature = hash('sha256', $username . $secret);
@@ -57,7 +73,7 @@ function generateToken(string $username): string
 }
 
 // --- Validar firma del token ---
-function validateToken(string $token): ?string
+function validateToken(string $token): ?array
 {
     global $credentials;
     $decoded = base64_decode($token);
@@ -67,8 +83,12 @@ function validateToken(string $token): ?string
 
     list($username, $signature) = explode('::', $decoded, 2);
 
+    // Compatibilidad Dual con array y string
+    $userData = $credentials['users'][$username] ?? null;
+    $userHash = is_array($userData) ? ($userData['hash'] ?? 'unknown') : ($userData ?? 'unknown');
+    $userRole = is_array($userData) ? ($userData['role'] ?? 'regular') : 'root'; // Por defecto los Legacy son root
+
     // Generar la firma que deberia tener hoy
-    $userHash = $credentials['users'][$username] ?? 'unknown';
     $secretToday = "nagios_stateless_" . date('Y-m-d') . $userHash;
     $expectedSignatureToday = hash('sha256', $username . $secretToday);
 
@@ -77,7 +97,7 @@ function validateToken(string $token): ?string
     $expectedSignatureYesterday = hash('sha256', $username . $secretYesterday);
 
     if (hash_equals($expectedSignatureToday, $signature) || hash_equals($expectedSignatureYesterday, $signature)) {
-        return $username;
+        return ['username' => $username, 'role' => $userRole];
     }
 
     return null;
@@ -108,12 +128,14 @@ if (!in_array($action, $publicActions)) {
         $token = trim($_GET['token']);
     }
 
-    $tokenUser = $token ? validateToken($token) : null;
-    if (!$tokenUser) {
+    $tokenUserArray = $token ? validateToken($token) : null;
+    if (!$tokenUserArray) {
         http_response_code(401);
         echo json_encode(['error' => 'No autorizado', 'code' => 401]);
         exit;
     }
+    $tokenUser = $tokenUserArray['username'];
+    $tokenRole = $tokenUserArray['role'];
 }
 
 try {
@@ -123,9 +145,13 @@ try {
             $username = $data['username'] ?? '';
             $password = $data['password'] ?? '';
 
-            if (isset($credentials['users'][$username]) && password_verify($password, $credentials['users'][$username])) {
+            $userData = $credentials['users'][$username] ?? null;
+            $userHash = is_array($userData) ? ($userData['hash'] ?? '') : ($userData ?? '');
+            $userRole = is_array($userData) ? ($userData['role'] ?? 'regular') : 'root';
+
+            if ($userHash && password_verify($password, $userHash)) {
                 $token = generateToken($username);
-                echo json_encode(['success' => true, 'token' => $token, 'username' => $username]);
+                echo json_encode(['success' => true, 'token' => $token, 'username' => $username, 'role' => $userRole]);
             }
             else {
                 http_response_code(401);
@@ -141,7 +167,7 @@ try {
 
         case 'check_auth':
             // Si llegó acá es porque el middleware validó el token
-            echo json_encode(['success' => true, 'username' => $tokenUser ?? '']);
+            echo json_encode(['success' => true, 'username' => $tokenUser ?? '', 'role' => $tokenRole ?? 'regular']);
             break;
         case 'hosts':
             echo json_encode(getHosts());
@@ -151,15 +177,24 @@ try {
             break;
         case 'add':
             $data = json_decode(file_get_contents('php://input'), true);
-            echo json_encode(addHost($data));
+            $res = addHost($data);
+            if (isset($res['success']))
+                logAudit($tokenUser, 'host_add', "Agregó el host {$data['host_name']}");
+            echo json_encode($res);
             break;
         case 'edit':
             $data = json_decode(file_get_contents('php://input'), true);
-            echo json_encode(editHost($data));
+            $res = editHost($data);
+            if (isset($res['success']))
+                logAudit($tokenUser, 'host_edit', "Editó el host {$data['host_name']}");
+            echo json_encode($res);
             break;
         case 'delete':
             $data = json_decode(file_get_contents('php://input'), true);
-            echo json_encode(deleteHost($data));
+            $res = deleteHost($data);
+            if (isset($res['success']))
+                logAudit($tokenUser, 'host_delete', "Eliminó el host {$data['host_name']}");
+            echo json_encode($res);
             break;
         case 'reload':
             echo json_encode(reloadNagios());
@@ -167,6 +202,69 @@ try {
         case 'validate':
             echo json_encode(validateConfig());
             break;
+
+        // --- MÓDULO DE USUARIOS Y AUDITORÍA ---
+        case 'audit_logs':
+            if ($tokenRole !== 'root') {
+                http_response_code(403);
+                echo json_encode(['error' => 'Permisos insuficientes']);
+                break;
+            }
+            echo json_encode(['logs' => getAuditLogs()]);
+            break;
+
+        case 'user_list':
+            if ($tokenRole !== 'root') {
+                http_response_code(403);
+                echo json_encode(['error' => 'Permisos insuficientes']);
+                break;
+            }
+            echo json_encode(['users' => getUserList()]);
+            break;
+
+        case 'user_add':
+            if ($tokenRole !== 'root') {
+                http_response_code(403);
+                echo json_encode(['error' => 'Permisos insuficientes']);
+                break;
+            }
+            $data = json_decode(file_get_contents('php://input'), true);
+            $res = addUser($data);
+            if (isset($res['success']))
+                logAudit($tokenUser, 'user_add', "Creó el usuario {$data['username']} con rol {$data['role']}");
+            echo json_encode($res);
+            break;
+
+        case 'user_edit':
+            if ($tokenRole !== 'root') {
+                http_response_code(403);
+                echo json_encode(['error' => 'Permisos insuficientes']);
+                break;
+            }
+            $data = json_decode(file_get_contents('php://input'), true);
+            $res = editUser($data);
+            if (isset($res['success']))
+                logAudit($tokenUser, 'user_edit', "Editó al usuario {$data['username']}");
+            echo json_encode($res);
+            break;
+
+        case 'user_delete':
+            if ($tokenRole !== 'root') {
+                http_response_code(403);
+                echo json_encode(['error' => 'Permisos insuficientes']);
+                break;
+            }
+            $data = json_decode(file_get_contents('php://input'), true);
+            if ($data['username'] === $tokenUser) {
+                echo json_encode(['error' => 'No puedes eliminarte a ti mismo']);
+                break;
+            }
+            $res = deleteUser($data);
+            if (isset($res['success']))
+                logAudit($tokenUser, 'user_delete', "Eliminó al usuario {$data['username']}");
+            echo json_encode($res);
+            break;
+
         case 'debug':
             // Endpoint to see if Apache is dropping Authorization header
             $headers = [];
@@ -198,7 +296,145 @@ catch (Exception $e) {
     echo json_encode(['error' => $e->getMessage()]);
 }
 
-// ===================== FUNCIONES =====================
+// ===================== FUNCIONES DE USUARIOS Y AUDITORÍA =====================
+
+function getAuditLogs()
+{
+    global $auditFile;
+    if (!file_exists($auditFile))
+        return [];
+
+    // Leer el archivo (limitado a las ultimas 500 lineas para no saturar)
+    $lines = file($auditFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    if ($lines === false)
+        return [];
+
+    $lines = array_slice(array_reverse($lines), 0, 500);
+    $parsed = [];
+    foreach ($lines as $line) {
+        // Parsear: [2024-03-05 14:30:00] user:admin | action:host_add | details:...
+        if (preg_match('/^\[(.*?)\]\s+user:(.*?)\s+\|\s+action:(.*?)\s+\|\s+details:(.*)$/', $line, $m)) {
+            $parsed[] = [
+                'date' => trim($m[1]),
+                'user' => trim($m[2]),
+                'action' => trim($m[3]),
+                'details' => trim($m[4])
+            ];
+        }
+        else {
+            // Formato inesperado
+            $parsed[] = ['date' => '', 'user' => 'system', 'action' => 'unknown', 'details' => $line];
+        }
+    }
+    return $parsed;
+}
+
+function getUserList()
+{
+    global $credentials;
+    $list = [];
+    foreach ($credentials['users'] as $username => $userData) {
+        $role = is_array($userData) ? ($userData['role'] ?? 'regular') : 'root';
+        $list[] = [
+            'username' => $username,
+            'role' => $role
+        ];
+    }
+    return $list;
+}
+
+function saveCredentials()
+{
+    global $credentials, $authFile;
+    $export = var_export($credentials, true);
+    // Reparar el "array (" por "[" para estilo corto y PHP 8+ amigable
+    $export = preg_replace('/array\s*\(/', '[', $export);
+    $export = preg_replace('/\)/', ']', $export);
+
+    $content = "<?php\n// Generado vía Web Panel " . date('Y-m-d H:i:s') . "\nreturn " . $export . ";\n";
+    if (file_put_contents($authFile, $content) !== false) {
+        @chmod($authFile, 0660);
+        return true;
+    }
+    return false;
+}
+
+function addUser($data)
+{
+    global $credentials;
+    $username = preg_replace('/[^a-zA-Z0-9_\.-]/', '', $data['username'] ?? '');
+    $password = $data['password'] ?? '';
+    $role = ($data['role'] ?? 'regular') === 'root' ? 'root' : 'regular';
+
+    if (empty($username) || empty($password))
+        return ['error' => 'Usuario y Contraseña son requeridos'];
+    if (isset($credentials['users'][$username]))
+        return ['error' => 'El usuario ya existe'];
+
+    $credentials['users'][$username] = [
+        'hash' => password_hash($password, PASSWORD_DEFAULT),
+        'role' => $role
+    ];
+
+    if (saveCredentials())
+        return ['success' => true, 'message' => "Usuario '$username' creado"];
+    return ['error' => 'No se pudo guardar la configuración de usuarios'];
+}
+
+function editUser($data)
+{
+    global $credentials;
+    $username = $data['username'] ?? '';
+    $password = $data['password'] ?? ''; // Opcional
+    $role = ($data['role'] ?? 'regular') === 'root' ? 'root' : 'regular'; // Opcional
+
+    if (!isset($credentials['users'][$username]))
+        return ['error' => 'Usuario no encontrado'];
+
+    $userData = $credentials['users'][$username];
+    $currentHash = is_array($userData) ? ($userData['hash'] ?? '') : $userData;
+
+    $credentials['users'][$username] = [
+        'hash' => empty($password) ? $currentHash : password_hash($password, PASSWORD_DEFAULT),
+        'role' => $role
+    ];
+
+    if (saveCredentials())
+        return ['success' => true, 'message' => "Usuario '$username' modificado"];
+    return ['error' => 'No se pudo guardar la configuración de usuarios'];
+}
+
+function deleteUser($data)
+{
+    global $credentials;
+    $username = $data['username'] ?? '';
+
+    if (!isset($credentials['users'][$username]))
+        return ['error' => 'Usuario no encontrado'];
+
+    // Evitar eliminar al último root
+    $rootCount = 0;
+    foreach ($credentials['users'] as $u => $uData) {
+        $r = is_array($uData) ? ($uData['role'] ?? 'regular') : 'root';
+        if ($r === 'root')
+            $rootCount++;
+    }
+
+    $userData = $credentials['users'][$username];
+    $r = is_array($userData) ? ($userData['role'] ?? 'regular') : 'root';
+
+    if ($r === 'root' && $rootCount <= 1) {
+        return ['error' => 'No puedes eliminar al último administrador (root) del sistema'];
+    }
+
+    unset($credentials['users'][$username]);
+
+    if (saveCredentials())
+        return ['success' => true, 'message' => "Usuario '$username' eliminado"];
+    return ['error' => 'No se pudo guardar la configuración de usuarios'];
+}
+
+// ===================== FUNCIONES MAIN (HOSTS) =====================
 
 /**
  * Listar todos los hosts configurados

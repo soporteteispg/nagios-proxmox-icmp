@@ -1209,6 +1209,11 @@ body {
 }
 
 /* Events section */
+.actions-cell .btn-icon + .btn-icon,
+.actions-cell .root-actions .btn-icon {
+    margin-left: 5px;
+}
+
 .history-events-section {
     margin-top: 8px;
 }
