@@ -7,6 +7,8 @@ Proyecto de monitoreo ICMP con Nagios Core y panel web personalizado. Está opti
 - Configuración separada por hosts internos y externos
 - Checkeos rápidos (cada 3-5 minutos)
 - **Panel Web Moderno** (Dashboard interactivo con modo oscuro) para agregar, borrar y visualizar el estado de los hosts
+- **Gestión de Usuarios y Roles (RBAC)** — Autenticación stateless (por Token HMAC) con separación entre usuarios Root (acceso total a configuración/usuarios) y Regulres (sólo gestión de hosts).
+- **Log de Auditoría Web** — Registro de acciones y eventos realizados por los usuarios del panel en un log integrado a la interfaz.
 - **Historial de Estado con RRD** — Gráficos de latencia (RTA) y pérdida de paquetes a lo largo del tiempo usando datos RRD + línea de tiempo de eventos
 - Autodespliegue en Proxmox automatizado
 
@@ -73,14 +75,22 @@ systemctl restart nagios
 ```
 *(Nota: El script `02-install-nagios.sh` ya aplica este fix automáticamente).*
 
-### 2. No se pueden eliminar o editar hosts desde el panel web
-Para que el panel web (Apache/PHP) pueda modificar los archivos de configuración, el usuario `www-data` debe tener permisos de escritura mediante el grupo `nagcmd`. Si el panel falla o no guarda los cambios:
+### 2. No se pueden eliminar o editar hosts/usuarios desde el panel web
+Para que el panel web (Apache/PHP) pueda modificar los archivos de configuración y la base de usuarios, el usuario `www-data` debe tener permisos de escritura. Si el panel falla o no guarda los cambios:
 ```bash
-# Arreglar permisos del directorio de hosts
-chown -R nagios:nagcmd /usr/local/nagios/etc/objects/hosts/
-chmod 664 /usr/local/nagios/etc/objects/hosts/*.cfg
-chmod 775 /usr/local/nagios/etc/objects/hosts
+# Arreglar permisos completos del directorio web y de hosts
+chown -R www-data:www-data /var/www/html/monitor
+chmod -R 0755 /var/www/html/monitor
+chown -R nagios:www-data /usr/local/nagios/etc/objects/hosts /usr/local/nagios/var/rw
+chmod -R 775 /usr/local/nagios/etc/objects/hosts /usr/local/nagios/var/rw
 ```
+
+### 3. Recuperar acceso de Administrador (Root)
+Si tu usuario principal perdió el acceso root o la UI de Administración ya no se muestra, puedes regenerar el archivo de usuarios con un hash bcrypt válido directamente desde el shell del contenedor LXC:
+```bash
+pct exec 200 -- php -r "\$arr = ['users' => ['admin' => ['hash' => password_hash('admin', PASSWORD_DEFAULT), 'role' => 'root']]]; file_put_contents('/var/www/html/monitor/auth.php', '<?php return ' . var_export(\$arr, true) . ';'); chmod('/var/www/html/monitor/auth.php', 0660); chown('/var/www/html/monitor/auth.php', 'www-data');"
+```
+*(Esto restablecerá el usuario a `admin` y la contraseña a `admin` con permisos root).*
 
 ### 3. Los gráficos de historial no muestran datos
 Si al hacer clic en un host el modal dice "No hay datos de rendimiento disponibles", verificá que el script 05 se ejecutó correctamente:
