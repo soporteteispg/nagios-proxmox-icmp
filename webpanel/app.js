@@ -120,13 +120,13 @@ function showApp(username, role = 'regular') {
     const btnAddHost = document.getElementById('btnAddHost');
     const tabAdmin = document.getElementById('tabAdmin'); // Lo crearemos en el HTML en breve
 
+    if (btnAddHost) btnAddHost.style.display = 'inline-flex';
+
     if (role === 'root') {
-        if (btnAddHost) btnAddHost.style.display = 'inline-flex';
         if (tabAdmin) tabAdmin.style.display = 'inline-block';
         document.body.classList.add('role-root');
         document.body.classList.remove('role-regular');
     } else {
-        if (btnAddHost) btnAddHost.style.display = 'none';
         if (tabAdmin) tabAdmin.style.display = 'none';
         document.body.classList.remove('role-root');
         document.body.classList.add('role-regular');
