@@ -315,47 +315,44 @@ function setupEventListeners() {
     window.openEditUserModal = openEditUserModal;
 
     // Initialize Admin Events on Load
-    document.addEventListener('DOMContentLoaded', () => {
+    // User Form Submit
+    const userForm = document.getElementById('userForm');
+    if (userForm) {
+        userForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const action = document.getElementById('formUserAction').value;
+            const payload = {
+                username: document.getElementById('formUsername').value,
+                role: document.getElementById('formUserRole').value
+            };
+            const pass = document.getElementById('formUserPass').value;
+            if (pass) payload.password = pass;
 
-        // User Form Submit
-        const userForm = document.getElementById('userForm');
-        if (userForm) {
-            userForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                const action = document.getElementById('formUserAction').value;
-                const payload = {
-                    username: document.getElementById('formUsername').value,
-                    role: document.getElementById('formUserRole').value
-                };
-                const pass = document.getElementById('formUserPass').value;
-                if (pass) payload.password = pass;
+            try {
+                const res = await apiFetch(`${API}?action=${action === 'add' ? 'user_add' : 'user_edit'}`, {
+                    method: 'POST',
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
 
-                try {
-                    const res = await apiFetch(`${API}?action=${action === 'add' ? 'user_add' : 'user_edit'}`, {
-                        method: 'POST',
-                        body: JSON.stringify(payload)
-                    });
-                    const data = await res.json();
-
-                    if (data.success) {
-                        showToast(data.message, 'success');
-                        handleUserModalClose();
-                        loadUsers();
-                        loadAuditLogs();
-                    } else {
-                        showToast(data.error || 'Error guardando usuario', 'error');
-                    }
-                } catch (err) {
-                    showToast('Error de red al guardar usuario', 'error');
+                if (data.success) {
+                    showToast(data.message, 'success');
+                    handleUserModalClose();
+                    loadUsers();
+                    loadAuditLogs();
+                } else {
+                    showToast(data.error || 'Error guardando usuario', 'error');
                 }
-            });
-        }
+            } catch (err) {
+                showToast('Error de red al guardar usuario', 'error');
+            }
+        });
+    }
 
-        const btnCloseUser = document.getElementById('userClose');
-        if (btnCloseUser) btnCloseUser.addEventListener('click', handleUserModalClose);
-        const btnCancelUser = document.getElementById('btnCancelUser');
-        if (btnCancelUser) btnCancelUser.addEventListener('click', handleUserModalClose);
-    });
+    const btnCloseUser = document.getElementById('userClose');
+    if (btnCloseUser) btnCloseUser.addEventListener('click', handleUserModalClose);
+    const btnCancelUser = document.getElementById('btnCancelUser');
+    if (btnCancelUser) btnCancelUser.addEventListener('click', handleUserModalClose);
 
     window.confirmDeleteUser = function (username) {
         if (confirm(`¿Estás seguro de que deseas ELIMINAR permanentemente al usuario '${username}'?`)) {
