@@ -138,7 +138,7 @@ echo "============================================"
 echo "  📌 CONFIGURACIÓN DE RED (NATEO)"
 echo "============================================"
 # Intentamos obtener la IP un par de veces por si tarda en levantar red
-for i in {1..5}; do
+for _ in {1..5}; do
     CONTAINER_IP=$(pct exec "$CTID" -- hostname -I | awk '{print $1}')
     if [ -n "$CONTAINER_IP" ]; then break; fi
     sleep 2
