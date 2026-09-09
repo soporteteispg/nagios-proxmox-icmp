@@ -2,6 +2,12 @@
 
 Proyecto de monitoreo ICMP con Nagios Core y panel web personalizado. Está optimizado para ser desplegado automáticamente en contenedores LXC de **Proxmox Virtual Environment** usando scripts de bash.
 
+**Índice:**
+- [Características](#-características) · [Requisitos](#️-requisitos)
+- [Instalación en un CT nuevo](#-instalación-en-un-ct-nuevo-paso-a-paso) (Pasos 1-5)
+- [Actualizar un CT existente](#-actualizar-un-ct-existente-sin-reinstalar) (Etapas 0-4)
+- [Referencia de scripts](#-referencia-de-scripts) · [Archivos](#-archivos-y-estructura) · [Troubleshooting](#-solución-de-problemas-troubleshooting)
+
 ## 🚀 Características
 - **Nagios Core 4.5.14** compilado y configurado
 - Configuración separada por hosts internos y externos
@@ -48,6 +54,12 @@ pct exec <CTID> -- sh -c '(crontab -l 2>/dev/null; echo "0 3 * * * root /root/06
 ```
 
 **Paso 5 — Agregá tus hosts:** desde el panel (botón `+ Agregar Host`) o editando `config/hosts/*.cfg` en el repo. Los ejemplos (`192.168.1.x`, `8.8.8.8`) son para probar: reemplazalos por tu red.
+
+✅ **Instalación completa.** Checklist: panel y `/nagios` responden, hosts en UP/DOWN (no PENDING), gráficos al hacer clic en un host, backup diario en cron.
+
+> **Nota para contenedores Unprivileged (LXC)**: el CT corre sin privilegios por defecto. Para que Nagios pueda hacer ping, los scripts le asignan los permisos adecuados y configuran `net.ipv4.ping_group_range`.
+
+---
 
 ## 🔄 Actualizar un CT existente (sin reinstalar)
 
@@ -121,32 +133,17 @@ Los hosts salen de PENDING en minutos (hueco de RRD durante la compilación es n
 pct exec <CTID> -- sh -c '(crontab -l 2>/dev/null; echo "0 3 * * * root /root/06-backup.sh >> /var/log/nagios-backup.log 2>&1") | crontab -'
 ```
 
-### ¿Qué hace cada script?
+✅ **Actualización completa.** Checklist: `nagios --version` nueva, `nagios -v` limpio, panel con login + alta/baja OK, gráficos retomando datos, cron instalado.
+
+---
+
+## 📜 Referencia de scripts
 - **Script 01**: Descarga Debian 12 si no existe, crea un LXC y le asigna configuración de red por DHCP.
 - **Script 02**: Instala las dependencias y compila Nagios 4.5.14 y los nagios-plugins.
 - **Script 03**: Utilitario interactivo para añadir hosts a la monitorización.
 - **Script 04**: Instala el Panel Web (API PHP y frontend HTML) y configura Apache2. Configura los permisos para editar los hosts desde el panel.
 - **Script 05** *(opcional)*: Instala `rrdtool` y configura Nagios para almacenar datos de rendimiento (latencia y pérdida de paquetes) en archivos RRD. Habilita los gráficos de historial en el panel web.
-- **Script 06**: Backup de hosts, configs, usuarios del panel y RRD en un `.tgz` con retención. Pensado para cron diario.
-
-### Backup automático
-Dentro del contenedor:
-```bash
-bash /root/06-backup.sh
-# Cron diario 3 AM:
-# 0 3 * * * root /root/06-backup.sh >> /var/log/nagios-backup.log 2>&1
-```
-Guarda en `/root/backups/nagios/nagios-FECHA.tgz` (hosts, `nagios.cfg`, customs, `htpasswd`, `auth.php`, `audit.log` y RRD si existe) con retención de 14 días (`BACKUP_RETENTION=30` para cambiarla). Restore: descomprimir y copiar de vuelta + `nagios -v` + `systemctl reload nagios` (el script imprime los comandos exactos).
-
-### Habilitar historial de rendimiento (RRD)
-Si querés ver gráficos de latencia y pérdida de paquetes a lo largo del tiempo, copiá y ejecutá el script 05 dentro del contenedor:
-```bash
-pct push <CTID> /root/Nagios/scripts/05-install-rrd.sh /root/05-install-rrd.sh
-pct exec <CTID> -- bash /root/05-install-rrd.sh
-```
-Los datos se generan automáticamente con cada check de Nagios (~cada 5 minutos). Para ver los gráficos, hacé clic en cualquier fila de host en el panel web.
-
-> **Nota para contenedores Unprivileged (LXC)**: Es importante tener en cuenta que el contenedor LXC, por defecto, se ejecuta como unpowered container. Para que Nagios pueda ejecutar comandos ping y checkear ICMP correctamente, los scripts le asignan los permisos adecuados y configuran `net.ipv4.ping_group_range`.
+- **Script 06**: Backup de hosts, configs, usuarios del panel y RRD en un `.tgz` con retención. Pensado para cron diario (ver Paso 4 de instalación).
 
 ## 📂 Archivos y Estructura
 - `/scripts/` — Scripts de bash automatizados y wrapper de Proxmox.
