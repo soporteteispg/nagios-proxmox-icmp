@@ -199,6 +199,15 @@ grep "process_performance_data" /usr/local/nagios/etc/nagios.cfg
 ```
 Los archivos `.rrd` se crean automáticamente con el primer check de cada host.
 
+### 5. Rotar credenciales que quedaron con valores por defecto
+Versiones viejas instalaban passwords fijos públicos (`nagios2026`, `admin123`, `nagios2024`).
+Si tu CT viene de esas versiones, rotalos (las instalaciones nuevas ya generan aleatorios):
+```bash
+pct exec <CTID> -- passwd                                   # root del CT
+pct exec <CTID> -- htpasswd -b /usr/local/nagios/etc/htpasswd.users nagiosadmin NUEVA_CLAVE
+# Panel: entrar como admin → Administración → editar usuario
+```
+
 ## 📝 Licencia
 Este proyecto es de código abierto y se distribuye bajo la licencia [GPLv3](./LICENSE).
 
