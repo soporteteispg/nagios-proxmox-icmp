@@ -40,7 +40,8 @@ fi
 mkdir -p "$WORK/objects"
 if [ -d "$NAGIOS_DIR/etc/objects/hosts" ]; then
     cp -r "$NAGIOS_DIR/etc/objects/hosts" "$WORK/objects/"
-    echo "   ✅ hosts ($(ls "$NAGIOS_DIR/etc/objects/hosts"/*.cfg 2>/dev/null | wc -l) archivos)"
+    HOST_COUNT=$(find "$NAGIOS_DIR/etc/objects/hosts" -maxdepth 1 -name '*.cfg' 2>/dev/null | wc -l)
+    echo "   ✅ hosts ($HOST_COUNT archivos)"
 fi
 for f in templates_custom.cfg commands_custom.cfg contacts_custom.cfg commands_perfdata.cfg; do
     if [ -f "$NAGIOS_DIR/etc/objects/$f" ]; then
@@ -83,7 +84,7 @@ rm -rf "$WORK"
 
 # ---- 6. Retención ----
 find "$BACKUP_BASE" -maxdepth 1 -name 'nagios-*.tgz' -mtime +"$RETENTION_DAYS" -delete
-COUNT=$(ls "$BACKUP_BASE"/nagios-*.tgz 2>/dev/null | wc -l)
+COUNT=$(find "$BACKUP_BASE" -maxdepth 1 -name 'nagios-*.tgz' 2>/dev/null | wc -l)
 
 echo ""
 echo "============================================"
