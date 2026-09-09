@@ -7,7 +7,7 @@ Proyecto de monitoreo ICMP con Nagios Core y panel web personalizado. Está opti
 - Configuración separada por hosts internos y externos
 - Checkeos rápidos (cada 3-5 minutos)
 - **Panel Web Moderno** (Dashboard interactivo con modo oscuro) para agregar, borrar y visualizar el estado de los hosts
-- **Gestión de Usuarios y Roles (RBAC)** — Autenticación stateless (por Token HMAC) con separación entre usuarios Root (acceso total a configuración/usuarios) y Regulres (sólo gestión de hosts).
+- **Gestión de Usuarios y Roles (RBAC)** — Autenticación stateless (por Token HMAC) con separación entre usuarios Root (acceso total a configuración/usuarios) y Regulares (sólo gestión de hosts).
 - **Log de Auditoría Web** — Registro de acciones y eventos realizados por los usuarios del panel en un log integrado a la interfaz.
 - **Historial de Estado con RRD** — Gráficos de latencia (RTA) y pérdida de paquetes a lo largo del tiempo usando datos RRD + línea de tiempo de eventos
 - Autodespliegue en Proxmox automatizado
@@ -17,27 +17,41 @@ Proyecto de monitoreo ICMP con Nagios Core y panel web personalizado. Está opti
 2. Conexión a internet desde el nodo Proxmox para clonar el repositorio y descargar el template de Debian 12.
 3. Acceso a la terminal como `root`.
 
-## 📦 Despliegue Automatizado
-Para desplegar este proyecto en un nuevo servidor Proxmox, tenés que descargar y ejecutar el script `deploy-proxmox.sh` en la terminal del nodo host de Proxmox.
+## 📦 Instalación en un CT nuevo (paso a paso)
 
-Este script se encargará de crear el contenedor (por defecto buscará usar el próximo CTID libre a partir del `200`), instalar Nagios y el Panel Web.
-Durante el proceso, el script detectará todos los storages disponibles en tu nodo y te permitirá elegir en cuál de ellos crear el contenedor de forma interactiva (usualmente sugiriendo `local-lvm` o `local-zfs`).
+Todo se hace en el **nodo Proxmox** como `root`. El deploy crea el LXC (Debian 12), compila
+Nagios + plugins (~5-15 min) e instala el panel. Detecta el próximo CTID libre desde `200` y te
+deja elegir storage.
 
-1. Ingresá por SSH al nodo Proxmox como `root`.
-2. Lanzá la creación del deployment:
-
+**Paso 1 — Descargar y ejecutar el deploy:**
 ```bash
 wget https://raw.githubusercontent.com/soporteteispg/nagios-proxmox-icmp/main/scripts/deploy-proxmox.sh
 bash deploy-proxmox.sh https://github.com/soporteteispg/nagios-proxmox-icmp.git
 ```
+Si el repositorio es privado, usá un token (PAT): `bash deploy-proxmox.sh https://TOKEN@github.com/soporteteispg/nagios-proxmox-icmp.git`.
+*(Si no pasás la URL, el script la pide de forma interactiva).*
 
-Si el repositorio es privado (requiere autenticación), podés enviar el token de acceso personal (PAT) directamente de esta forma:
+**Paso 2 — Primer ingreso (guardá estas credenciales):**
+- Panel: `http://<IP-CT>/monitor` → usuario `admin` + password **aleatorio mostrado al final** del deploy. Cambialo en Administración ni bien entres.
+- Nagios clásico: `http://<IP-CT>/nagios` → `nagiosadmin` + password **aleatorio mostrado al final** del deploy.
+
+**Paso 3 — Historial de rendimiento (RRD, opcional pero recomendado):**
 ```bash
-bash deploy-proxmox.sh https://TOKEN@github.com/soporteteispg/nagios-proxmox-icmp.git
+pct push <CTID> /root/Nagios/scripts/05-install-rrd.sh /root/05-install-rrd.sh
+pct exec <CTID> -- bash /root/05-install-rrd.sh
 ```
-*(Si no pasás el parámetro, el script te va a pedir la URL de forma interactiva).*
+Los gráficos aparecen haciendo clic en cualquier host del panel (los datos arrancan con los primeros checks).
 
-### ¿Qué hace el script?
+**Paso 4 — Backup diario:**
+```bash
+pct exec <CTID> -- sh -c '(crontab -l 2>/dev/null; echo "0 3 * * * root /root/06-backup.sh >> /var/log/nagios-backup.log 2>&1") | crontab -'
+```
+
+**Paso 5 — Agregá tus hosts:** desde el panel (botón `+ Agregar Host`) o editando `config/hosts/*.cfg` en el repo. Los ejemplos (`192.168.1.x`, `8.8.8.8`) son para probar: reemplazalos por tu red.
+
+> ¿Ya tenés un CT instalado de una versión anterior? No reinstales: seguí [docs/ACTUALIZAR.md](docs/ACTUALIZAR.md) (snapshot → backup → panel → RRD → núcleo, por etapas y sin sorpresas).
+
+### ¿Qué hace cada script?
 - **Script 01**: Descarga Debian 12 si no existe, crea un LXC y le asigna configuración de red por DHCP.
 - **Script 02**: Instala las dependencias y compila Nagios 4.5.14 y los nagios-plugins.
 - **Script 03**: Utilitario interactivo para añadir hosts a la monitorización.
@@ -55,9 +69,10 @@ bash /root/06-backup.sh
 Guarda en `/root/backups/nagios/nagios-FECHA.tgz` (hosts, `nagios.cfg`, customs, `htpasswd`, `auth.php`, `audit.log` y RRD si existe) con retención de 14 días (`BACKUP_RETENTION=30` para cambiarla). Restore: descomprimir y copiar de vuelta + `nagios -v` + `systemctl reload nagios` (el script imprime los comandos exactos).
 
 ### Habilitar historial de rendimiento (RRD)
-Si querés ver gráficos de latencia y pérdida de paquetes a lo largo del tiempo, ejecutá el script 05 dentro del contenedor:
+Si querés ver gráficos de latencia y pérdida de paquetes a lo largo del tiempo, copiá y ejecutá el script 05 dentro del contenedor:
 ```bash
-pct exec <CTID> -- bash -c "bash /root/nagios-proxmox-icmp/scripts/05-install-rrd.sh"
+pct push <CTID> /root/Nagios/scripts/05-install-rrd.sh /root/05-install-rrd.sh
+pct exec <CTID> -- bash /root/05-install-rrd.sh
 ```
 Los datos se generan automáticamente con cada check de Nagios (~cada 5 minutos). Para ver los gráficos, hacé clic en cualquier fila de host en el panel web.
 
@@ -74,6 +89,7 @@ Los datos se generan automáticamente con cada check de Nagios (~cada 5 minutos)
   - `deploy-proxmox.sh` — Despliegue automatizado completo
 - `/config/` — Archivos `.cfg` de Nagios base y templates.
 - `/webpanel/` — Dashboard responsivo con HTML/JS, gráficos Chart.js y API en PHP.
+- `/docs/` — Guías: `ACTUALIZAR.md` (llevar un CT existente a la última versión por etapas).
 
 ## 🚑 Solución de Problemas (Troubleshooting)
 
@@ -103,7 +119,7 @@ pct exec 200 -- php -r "\$arr = ['users' => ['admin' => ['hash' => password_hash
 ```
 *(Esto restablecerá el usuario a `admin` y la contraseña a `admin` con permisos root).*
 
-### 3. Los gráficos de historial no muestran datos
+### 4. Los gráficos de historial no muestran datos
 Si al hacer clic en un host el modal dice "No hay datos de rendimiento disponibles", verificá que el script 05 se ejecutó correctamente:
 ```bash
 # Verificar que rrdtool está instalado
