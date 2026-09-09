@@ -9,8 +9,8 @@
 set -e
 
 # ===================== CONFIGURACIÓN =====================
-NAGIOS_VERSION="4.5.7"
-PLUGINS_VERSION="2.4.12"
+NAGIOS_VERSION="4.5.14"
+PLUGINS_VERSION="2.5"
 # SEGURIDAD: contraseña del usuario web nagiosadmin. Se puede prefijar con:
 #   NAGIOS_ADMIN_PASS=... bash 02-install-nagios.sh
 # Si no se define, se genera una aleatoria y se muestra al final (guardarla).
