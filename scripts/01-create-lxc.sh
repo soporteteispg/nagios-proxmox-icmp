@@ -22,7 +22,10 @@ SWAP=512                              # SWAP en MB
 CORES=2                               # Núcleos CPU
 BRIDGE="vmbr0"                        # Bridge de red
 DNS="8.8.8.8"                         # DNS
-PASSWORD="nagios2026"                 # Contraseña root del contenedor (CAMBIAR)
+# SEGURIDAD: password root del CT. Se puede prefijar con:
+#   PASSWORD=... bash 01-create-lxc.sh  (o CTID=... STORAGE=... como el resto)
+# Si no se define, se genera uno aleatorio y se muestra al final (guardarlo).
+PASSWORD="${PASSWORD:-$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 16)}"
 # =========================================================
 
 echo "============================================"
@@ -107,10 +110,14 @@ sleep 5
 if pct status "$CTID" | grep -q "running"; then
     echo ""
     echo "============================================"
-    echo "  ✅ Contenedor $CTID creado y corriendo"
-    echo "============================================"
-    echo ""
-    echo "  Siguiente paso:"
+echo "  ✅ Contenedor $CTID creado y corriendo"
+echo "============================================"
+echo ""
+echo "  Root del CT (solo se muestra esta vez, guardarlo):"
+echo "  Usuario:  root"
+echo "  Password: $PASSWORD"
+echo ""
+echo "  Siguiente paso:"
     echo "  1. Copiar los archivos al contenedor:"
     echo "     pct push $CTID 02-install-nagios.sh /root/02-install-nagios.sh"
     echo ""
