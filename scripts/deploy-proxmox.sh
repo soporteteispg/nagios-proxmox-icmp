@@ -173,6 +173,8 @@ echo "   📂 Scripts..."
 pct push "$CTID" "$CLONE_DIR/scripts/02-install-nagios.sh" /root/02-install-nagios.sh
 pct push "$CTID" "$CLONE_DIR/scripts/03-add-host.sh" /root/03-add-host.sh
 pct push "$CTID" "$CLONE_DIR/scripts/04-install-webpanel.sh" /root/04-install-webpanel.sh
+pct push "$CTID" "$CLONE_DIR/scripts/05-install-rrd.sh" /root/05-install-rrd.sh
+pct push "$CTID" "$CLONE_DIR/scripts/06-backup.sh" /root/06-backup.sh
 
 # Configuraciones
 echo "   📂 Configuraciones..."

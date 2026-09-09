@@ -106,10 +106,13 @@ if [ ! -f "$RRD_FILE" ]; then
     chmod 664 "$RRD_FILE"
 fi
 
-# Actualizar RRD
-# Usar timestamp actual o N para "ahora"
+# Actualizar RRD. Usar timestamp actual o N para "ahora".
+# Si falla, loguearlo a syslog en vez de silenciarlo:
+# los huecos en las gráficas son indebuggables si el error se pierde.
 TS="${TIMESTAMP:-N}"
-rrdtool update "$RRD_FILE" "${TS}:${RTA}:${PL}" 2>/dev/null || true
+if ! rrdtool update "$RRD_FILE" "${TS}:${RTA}:${PL}" 2>/dev/null; then
+    logger -t nagios-perfdata "ERROR actualizando $RRD_FILE (ts=${TS} rta=${RTA} pl=${PL})"
+fi
 SCRIPT
 
 chmod 755 "$PERFDATA_SCRIPT"
