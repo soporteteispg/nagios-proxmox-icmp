@@ -49,7 +49,77 @@ pct exec <CTID> -- sh -c '(crontab -l 2>/dev/null; echo "0 3 * * * root /root/06
 
 **Paso 5 — Agregá tus hosts:** desde el panel (botón `+ Agregar Host`) o editando `config/hosts/*.cfg` en el repo. Los ejemplos (`192.168.1.x`, `8.8.8.8`) son para probar: reemplazalos por tu red.
 
-> ¿Ya tenés un CT instalado de una versión anterior? No reinstales: seguí [docs/ACTUALIZAR.md](docs/ACTUALIZAR.md) (snapshot → backup → panel → RRD → núcleo, por etapas y sin sorpresas).
+## 🔄 Actualizar un CT existente (sin reinstalar)
+
+Guía probada en producción para llevar un CT a la última versión del repo por etapas.
+Todo se ejecuta en el **nodo Proxmox** como `root`. Reemplazá `<CTID>` (empezá por el menos crítico).
+
+### Etapa 0 — Red de seguridad (siempre)
+```bash
+pct snapshot <CTID> pre-update
+pct push <CTID> /root/Nagios/scripts/06-backup.sh /root/06-backup.sh
+pct exec <CTID> -- bash /root/06-backup.sh
+```
+Si `/root/Nagios` no existe o está desactualizado: `cd /root/Nagios && git pull` (o clonalo).
+Rollback si algo sale mal: `pct rollback <CTID> pre-update`.
+
+### Etapa 1 — Panel web (sin downtime)
+No reinicia Nagios, solo recarga Apache.
+```bash
+pct push <CTID> /root/Nagios/webpanel/api.php /root/api.php.new
+pct exec <CTID> -- cp /var/www/html/monitor/api.php /var/www/html/monitor/api.php.bak-pre
+pct exec <CTID> -- cp /root/api.php.new /var/www/html/monitor/api.php
+pct exec <CTID> -- php -l /var/www/html/monitor/api.php
+pct pull <CTID> /var/www/html/monitor/.htaccess ./htaccess.ct<CTID>
+```
+Agregá al final del archivo (con finales de línea **LF**):
+```apache
+<Files "auth.php">
+    Require all denied
+</Files>
+<Files "audit.log">
+    Require all denied
+</Files>
+```
+```bash
+pct push <CTID> ./htaccess.ct<CTID> /var/www/html/monitor/.htaccess
+pct exec <CTID> -- apachectl configtest   # debe decir "Syntax OK"
+pct exec <CTID> -- systemctl reload apache2
+```
+Verificación (IP del CT: `pct exec <CTID> -- hostname -I`):
+```bash
+curl -s -o /dev/null -w "audit.log -> %{http_code}\n" http://<IP>/monitor/audit.log
+curl -s -o /dev/null -w "api sin token -> %{http_code}\n" "http://<IP>/monitor/api.php?action=status"
+```
+Esperado: `403` y `401`. Después en el navegador: login, agregar y borrar un host de prueba.
+Rollback: `pct exec <CTID> -- cp /var/www/html/monitor/api.php.bak-pre /var/www/html/monitor/api.php && systemctl reload apache2`.
+
+### Etapa 2 — RRD (solo si usás gráficos)
+Si existe `/usr/local/nagios/var/rrd` con datos. Al final hace `systemctl restart nagios` (corte de segundos).
+```bash
+pct push <CTID> /root/Nagios/scripts/05-install-rrd.sh /root/05-install-rrd.sh
+pct exec <CTID> -- bash /root/05-install-rrd.sh
+pct exec <CTID> -- grep -n "logger" /usr/local/nagios/libexec/process_perfdata.sh
+```
+
+### Etapa 3 — Núcleo Nagios (ventana de mantenimiento)
+Recompila (5-15 min), reinicia el servicio y **resetea el password de `nagiosadmin`** (el del panel no se toca).
+```bash
+pct push <CTID> /root/Nagios/scripts/02-install-nagios.sh /root/02-install-nagios.sh
+pct exec <CTID> -- bash -c 'bash /root/02-install-nagios.sh 2>&1 | tee /root/02-output.log'
+```
+Guardá el password nuevo del bloque final (si se pierde: `pct exec <CTID> -- grep -A2 "Password" /root/02-output.log`).
+```bash
+pct exec <CTID> -- /usr/local/nagios/bin/nagios --version
+pct exec <CTID> -- systemctl is-active nagios apache2
+pct exec <CTID> -- /usr/local/nagios/bin/nagios -v /usr/local/nagios/etc/nagios.cfg 2>&1 | tail -3
+```
+Los hosts salen de PENDING en minutos (hueco de RRD durante la compilación es normal).
+
+### Etapa 4 — Cron (una sola vez)
+```bash
+pct exec <CTID> -- sh -c '(crontab -l 2>/dev/null; echo "0 3 * * * root /root/06-backup.sh >> /var/log/nagios-backup.log 2>&1") | crontab -'
+```
 
 ### ¿Qué hace cada script?
 - **Script 01**: Descarga Debian 12 si no existe, crea un LXC y le asigna configuración de red por DHCP.
@@ -89,7 +159,6 @@ Los datos se generan automáticamente con cada check de Nagios (~cada 5 minutos)
   - `deploy-proxmox.sh` — Despliegue automatizado completo
 - `/config/` — Archivos `.cfg` de Nagios base y templates.
 - `/webpanel/` — Dashboard responsivo con HTML/JS, gráficos Chart.js y API en PHP.
-- `/docs/` — Guías: `ACTUALIZAR.md` (llevar un CT existente a la última versión por etapas).
 
 ## 🚑 Solución de Problemas (Troubleshooting)
 
