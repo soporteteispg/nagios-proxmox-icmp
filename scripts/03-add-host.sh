@@ -20,6 +20,28 @@ read -r -p "Nombre del host (sin espacios, ej: servidor-web): " HOST_NAME
 read -r -p "Descripción (alias, ej: Servidor Web Principal): " HOST_ALIAS
 read -r -p "Dirección IP o dominio: " HOST_ADDRESS
 
+# SEGURIDAD: sanitizar entradas antes de escribir el .cfg y el path.
+# - host_name: solo [a-zA-Z0-9_-] (evita path traversal e inyección)
+# - alias: sin saltos de línea ni caracteres de control, máx 128
+# - address: IP o hostname válido (evita inyección de directivas)
+HOST_NAME=$(echo "$HOST_NAME" | tr -cd 'a-zA-Z0-9_-')
+HOST_ALIAS=$(echo "$HOST_ALIAS" | tr -d '\r\n' | cut -c1-128)
+HOST_ADDRESS=$(echo "$HOST_ADDRESS" | tr -d ' \t\r\n')
+
+if [ -z "$HOST_NAME" ]; then
+    echo ""
+    echo "ERROR: nombre de host vacío o inválido (usar solo letras, números, - y _)."
+    exit 1
+fi
+if [ -z "$HOST_ALIAS" ]; then
+    HOST_ALIAS="$HOST_NAME"
+fi
+if ! echo "$HOST_ADDRESS" | grep -qE '^[A-Za-z0-9_.-]+$'; then
+    echo ""
+    echo "ERROR: dirección IP o dominio inválido: '$HOST_ADDRESS'."
+    exit 1
+fi
+
 echo ""
 echo "Tipo de host:"
 echo "  1) Interno (red local)"
@@ -51,6 +73,7 @@ esac
 PARENT_LINE=""
 if [ "$HOST_TYPE" == "1" ]; then
     read -r -p "Host padre (ej: gateway, o dejar vacío): " PARENT
+    PARENT=$(echo "$PARENT" | tr -cd 'a-zA-Z0-9_-')
     if [ -n "$PARENT" ]; then
         PARENT_LINE="    parents                 $PARENT"
     fi

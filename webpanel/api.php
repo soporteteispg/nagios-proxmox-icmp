@@ -265,23 +265,6 @@ try {
             echo json_encode($res);
             break;
 
-        case 'debug':
-            // Endpoint to see if Apache is dropping Authorization header
-            $headers = [];
-            foreach ($_SERVER as $key => $value) {
-                if (substr($key, 0, 5) == 'HTTP_') {
-                    $headers[str_replace(' ', '-', ucwords(str_replace('_', ' ', strtolower(substr($key, 5)))))] = $value;
-                }
-            }
-            if (isset($_SERVER['CONTENT_TYPE']))
-                $headers['Content-Type'] = $_SERVER['CONTENT_TYPE'];
-            if (isset($_SERVER['CONTENT_LENGTH']))
-                $headers['Content-Length'] = $_SERVER['CONTENT_LENGTH'];
-            if (function_exists('apache_request_headers')) {
-                $headers = array_merge($headers, apache_request_headers());
-            }
-            echo json_encode(['headers' => $headers, 'token_user' => $tokenUser ?? null]);
-            break;
         case 'history':
             $hostName = sanitizeName($_GET['host'] ?? '');
             $range = $_GET['range'] ?? '24h';
@@ -346,10 +329,10 @@ function getUserList()
 function saveCredentials()
 {
     global $credentials, $authFile;
+    // NOTA SEGURIDAD: no convertir la salida de var_export a sintaxis corta.
+    // Un reemplazo ingenuo de ")" por "]" corrompe cualquier dato que contenga
+    // paréntesis (ej: un hash). La sintaxis array() es PHP válido y la lee include().
     $export = var_export($credentials, true);
-    // Reparar el "array (" por "[" para estilo corto y PHP 8+ amigable
-    $export = preg_replace('/array\s*\(/', '[', $export);
-    $export = preg_replace('/\)/', ']', $export);
 
     $content = "<?php\n// Generado vía Web Panel " . date('Y-m-d H:i:s') . "\nreturn " . $export . ";\n";
     if (file_put_contents($authFile, $content) !== false) {
@@ -559,14 +542,20 @@ function getStatus()
 function addHost($data)
 {
     $name = sanitizeName($data['host_name'] ?? '');
-    $alias = $data['alias'] ?? $name;
-    $address = $data['address'] ?? '';
+    $alias = sanitizeText($data['alias'] ?? $name);
+    $address = trim((string)($data['address'] ?? ''));
     $type = $data['type'] ?? 'internal';
     $parent = sanitizeName($data['parent'] ?? '');
     $checkLevel = $data['check_level'] ?? 'detailed';
 
     if (empty($name) || empty($address)) {
         return ['error' => 'Nombre y dirección son obligatorios'];
+    }
+    if ($alias === '') {
+        $alias = $name;
+    }
+    if (!isValidAddress($address)) {
+        return ['error' => 'Dirección IP o nombre DNS inválido'];
     }
 
     // Verificar que no exista
@@ -622,14 +611,20 @@ function editHost($data)
 {
     $originalName = sanitizeName($data['original_name'] ?? '');
     $name = sanitizeName($data['host_name'] ?? '');
-    $alias = $data['alias'] ?? $name;
-    $address = $data['address'] ?? '';
+    $alias = sanitizeText($data['alias'] ?? $name);
+    $address = trim((string)($data['address'] ?? ''));
     $type = $data['type'] ?? 'internal';
     $parent = sanitizeName($data['parent'] ?? '');
     $checkLevel = $data['check_level'] ?? 'detailed';
 
     if (empty($originalName) || empty($name) || empty($address)) {
         return ['error' => 'Datos incompletos'];
+    }
+    if ($alias === '') {
+        $alias = $name;
+    }
+    if (!isValidAddress($address)) {
+        return ['error' => 'Dirección IP o nombre DNS inválido'];
     }
 
     // Eliminar el viejo
@@ -798,6 +793,35 @@ function parsePingOutput($pluginOutput, $perfData)
 function sanitizeName($name)
 {
     return preg_replace('/[^a-zA-Z0-9_-]/', '', $name);
+}
+
+/**
+ * Sanitiza texto libre que se escribe en archivos .cfg de Nagios (ej: alias).
+ * Elimina saltos de línea y caracteres de control para evitar inyección de
+ * directivas, colapsa espacios y limita el largo.
+ */
+function sanitizeText($text, $maxLen = 128)
+{
+    $text = (string)$text;
+    $text = preg_replace('/[\r\n\x00-\x1F\x7F]/', ' ', $text);
+    $text = trim(preg_replace('/\s+/', ' ', $text));
+    if (strlen($text) > $maxLen)
+        $text = substr($text, 0, $maxLen);
+    return $text;
+}
+
+/**
+ * Valida que una dirección sea IP (v4/v6) o nombre DNS válido.
+ * Evita inyectar contenido arbitrario en los .cfg vía el campo address.
+ */
+function isValidAddress($addr)
+{
+    $addr = trim((string)$addr);
+    if ($addr === '' || strlen($addr) > 253)
+        return false;
+    if (filter_var($addr, FILTER_VALIDATE_IP))
+        return true;
+    return (bool)preg_match('/^[A-Za-z0-9_]([A-Za-z0-9_.-]{0,251}[A-Za-z0-9_])?$/', $addr);
 }
 
 function detectType($host)

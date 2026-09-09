@@ -11,7 +11,10 @@ set -e
 # ===================== CONFIGURACIÓN =====================
 NAGIOS_VERSION="4.5.7"
 PLUGINS_VERSION="2.4.12"
-NAGIOS_ADMIN_PASS="admin123"          # Contraseña para la web (CAMBIAR)
+# SEGURIDAD: contraseña del usuario web nagiosadmin. Se puede prefijar con:
+#   NAGIOS_ADMIN_PASS=... bash 02-install-nagios.sh
+# Si no se define, se genera una aleatoria y se muestra al final (guardarla).
+NAGIOS_ADMIN_PASS="${NAGIOS_ADMIN_PASS:-$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 16)}"
 # =========================================================
 
 NAGIOS_URL="https://github.com/NagiosEnterprises/nagioscore/releases/download/nagios-${NAGIOS_VERSION}/nagios-${NAGIOS_VERSION}.tar.gz"

@@ -31,21 +31,27 @@ if [ -d "/root/webpanel" ]; then
     if [ ! -f "$PANEL_DIR/auth.php" ] && [ -f "/root/webpanel/auth.php" ]; then
         cp /root/webpanel/auth.php "$PANEL_DIR/"
     elif [ ! -f "$PANEL_DIR/auth.php" ]; then
+        # SEGURIDAD: contraseña inicial ALEATORIA (no fija). Se muestra al final
+        # de la instalación por única vez; cambiarla en el panel (Administración).
+        # Se puede prefijar con: PANEL_ADMIN_PASS=... bash 04-install-webpanel.sh
+        PANEL_ADMIN_PASS="${PANEL_ADMIN_PASS:-$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 12)}"
         # Generar hash real en el servidor usando PHP CLI
-        DEFAULT_HASH=$(php -r "echo password_hash('nagios2024', PASSWORD_DEFAULT);")
+        DEFAULT_HASH=$(php -r "echo password_hash('$PANEL_ADMIN_PASS', PASSWORD_DEFAULT);")
         cat << EOF > "$PANEL_DIR/auth.php"
 <?php
 // Archivo de credenciales de Nagios Web Panel
-// Este archivo NO debe ser accesible públicamente.
-// La contraseña predeterminada es: nagios2024
+// Este archivo NO debe ser accesible públicamente (ver .htaccess).
 return [
     'users' => [
-        'admin' => '$DEFAULT_HASH'
+        'admin' => [
+            'hash' => '$DEFAULT_HASH',
+            'role' => 'root'
+        ]
     ]
 ];
 EOF
     fi
-    
+
     # Crear .htaccess para asegurar que el header Authorization llegue a PHP (Token Auth)
     cat << EOF > "$PANEL_DIR/.htaccess"
 <IfModule mod_rewrite.c>
@@ -55,6 +61,14 @@ RewriteRule .* - [e=HTTP_AUTHORIZATION:%1]
 </IfModule>
 SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
 CGIPassAuth On
+
+# SEGURIDAD: la API los lee por filesystem, nadie debe descargarlos por HTTP
+<Files "auth.php">
+    Require all denied
+</Files>
+<Files "audit.log">
+    Require all denied
+</Files>
 EOF
 
     echo "   ✅ Archivos del panel copiados"
@@ -143,6 +157,13 @@ echo ""
 echo "  Acceder al panel:"
 echo "  http://$(hostname -I | awk '{print $1}')/monitor"
 echo ""
+if [ -n "${PANEL_ADMIN_PASS:-}" ]; then
+    echo "  Credenciales iniciales (solo se muestran esta vez):"
+    echo "  Usuario:  admin"
+    echo "  Password: $PANEL_ADMIN_PASS"
+    echo "  Cambiala en el panel (Administración) ni bien entres."
+    echo ""
+fi
 echo "  Panel Nagios original:"
 echo "  http://$(hostname -I | awk '{print $1}')/nagios"
 echo ""
